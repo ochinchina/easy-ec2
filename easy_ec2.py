@@ -4,23 +4,26 @@
 ec2 tool for manage the virtual machine in the EE-cloud
 
 Usage:
-    ec2.py image list [--os=<os>] [--id=<image_id>]
-    ec2.py tags create <resource_id> [<tag>...]
-    ec2.py tags delete <resource_id> [<tag>...]
-    ec2.py instance start <image_id> <name> [--type=<type>] [--zone=<zone>]
-    ec2.py instance stop <instance_id> [--force]
-    ec2.py instance list [--name=<name>]
-    ec2.py instance terminate <instance_id>
-    ec2.py instance types
-    ec2.py zone list
-    ec2.py volume list [--id=<volume_id>]
-    ec2.py volume create <size> [--zone=<zone>] [--name=<name>]
-    ec2.py volume delete <volume_id>
-    ec2.py volume attach <instance_id> <volume_id> [--device=<device>]
-    ec2.py volume detach <volume_id> [--force]
-    ec2.py ssh <name>
-    ec2.py scp <from_file> <to_file>
-    ec2.py version
+    easy_ec2.py image list [--os=<os>] [--id=<image_id>] [--debug|-d]
+    easy_ec2.py tags create <resource_id> [--debug|-d] [<tag>...]
+    easy_ec2.py tags delete <resource_id> [--debug|-d] [<tag>...]
+    easy_ec2.py instance start <image_id> <name> [--debug|-d] [--type=<type>] [--zone=<zone>]
+    easy_ec2.py instance stop <instance_id> [--debug|-d] [--force]
+    easy_ec2.py instance list [--debug|-d] [--name=<name>]
+    easy_ec2.py instance terminate <instance_id> [--debug|-d]
+    easy_ec2.py instance types [--debug|-d]
+    easy_ec2.py zone list [--debug|-d]
+    easy_ec2.py volume list [--id=<volume_id>] [--debug|-d]
+    easy_ec2.py volume create <size> [--zone=<zone>] [--name=<name>] [--debug|-d]
+    easy_ec2.py volume delete <volume_id> [--debug|-d]
+    easy_ec2.py volume attach <instance_id> <volume_id> [--device=<device>] [--debug|-d]
+    easy_ec2.py volume detach <volume_id> [--force] [--debug|-d]
+    easy_ec2.py keypair create <name> [--debug|-d]
+    easy_ec2.py keypair delete <name> [--debug|-d]
+    easy_ec2.py keypair list [--debug|-d]
+    easy_ec2.py ssh <name> [--debug|-d]
+    easy_ec2.py scp <from_file> <to_file> [--debug|-d]
+    easy_ec2.py version 
 
 Options:
 """
@@ -33,19 +36,25 @@ import json
 import docopt
 import ConfigParser 
 
-def exec_command( cmd ):
+def exec_command( config, cmd ):
     try:
+        cmd.append( '-I' )
+        cmd.append( config['access_id'] )
+        cmd.append( '-S' )
+        cmd.append( config['access_key'] )
+        if config['debug']:
+            cmd.append( '--debug' )
         return subprocess.check_output( cmd )
     except:
         return ""
 def list_images( config, image_id = "", os=""):
     result = []
-    cmd = ["euca-describe-images", "-I", config['access_id'], "-S", config['access_key'] ]
+    cmd = ["euca-describe-images" ]
     if image_id:
         cmd.append( image_id )
     else:
         cmd.append( "-a" )
-    out = exec_command( cmd )
+    out = exec_command( config, cmd )
 
     for line in out.split("\n"):
         words = line.split()
@@ -71,20 +80,20 @@ def create_tags( config, resource_id, tags ):
     """
     create tag on the instance or volume
     """
-    cmd = ["euca-create-tags",resource_id, "-I", config['access_id'], "-S", config['access_key'] ] 
+    cmd = ["euca-create-tags",resource_id]
     for tag in tags:
         cmd.append( "--tag" )
         cmd.append( tag )
-    out = subprocess.check_output( cmd )
+    out = exec_command( config, cmd )
     print out
 
 def delete_tags( config, resource_id, tags ):
     """delete the tags"""
-    cmd = ["euca-delete-tags",resource_id, "-I", config['access_id'], "-S", config['access_key'] ]
+    cmd = ["euca-delete-tags",resource_id ]
     for tag in tags:
         cmd.append( "--tag")
         cmd.append( tag )
-    out = subprocess.check_output( cmd )
+    out = exec_command( config, cmd )
     print out
 
 def get_instances_by_tags( config, tags = None ):
@@ -108,7 +117,7 @@ def start_instance( config, image_id = 'emi-c1030eab', instance_type = 'm1.large
         print "Error: fail to find image by %s" % image_id
     if not zone:
         zone = get_first_available_zone( config )
-    out = subprocess.check_output( ["euca-run-instances", real_image_id, "-t", instance_type, "-I", config['access_id'], "-S", config['access_key'], '-z', zone, '-k', config['key_pair'] ] )
+    out = exec_command( config, ["euca-run-instances", real_image_id, "-t", instance_type, '-z', zone, '-k', config['key_pair'] ] )
     result = parse_instance( out )
     if result and result[0]["instance_id"]:
         create_tags( config, result[0]["instance_id"], tags )
@@ -119,10 +128,10 @@ def start_instance( config, image_id = 'emi-c1030eab', instance_type = 'm1.large
     return result[0]
 
 def stop_instance( config, instance_id, force = False ):
-    cmd = ['euca-stop-instances', instance_id, "-I", config["access_id"], "-S", config["access_key"] ]
+    cmd = ['euca-stop-instances', instance_id ]
     if force:
         cmd.append( '-f' )
-    out = subprocess.check_output( cmd )
+    out = exec_command( config, cmd )
     print out
 
 def parse_instance( out ):
@@ -155,7 +164,7 @@ def parse_instance( out ):
     return result
 
 def list_instances( config, name = "" ):
-    out = subprocess.check_output( ["euca-describe-instances", "-I", config['access_id'], "-S", config['access_key'] ] )
+    out = exec_command( config, ["euca-describe-instances" ] )
     instances = parse_instance( out )
     if not name:
         return instances
@@ -178,7 +187,7 @@ def find_instance( config, instance_id ):
 
 def terminate_instance( config, instance_id ):
     result = {}
-    out = subprocess.check_output(["euca-terminate-instances", "-I", config['access_id'], "-S", config['access_key'], instance_id ])
+    out = exec_command(config, ["euca-terminate-instances", instance_id ])
     for line in out.split("\n"):
         words = line.split()
         if len( words ) == 4 and words[0] == "INSTANCE":
@@ -188,7 +197,17 @@ def terminate_instance( config, instance_id ):
     return result
 
 def list_instance_types( config ):
-    os.system( "euca-describe-instance-types -I %s -S %s" % ( config['access_id'], config['access_key'] ) )
+    out = exec_command( config, ['euca-describe-instance-types'] )
+    result = []
+    for line in out.split("\n"):
+        words = line.split()
+        if len( words ) == 5 and words[0] == "INSTANCETYPE":
+            result.append( {'name': words[1],
+                            'cpu': words[2],
+                            'memory': words[3],
+                            'disk': words[4] } )
+    return result
+
 def ssh( config, name ):
     instances = list_instances( config )
     for inst in instances:
@@ -217,7 +236,7 @@ def scp( config, from_file, to_file ):
     os.system( "scp -i %s -o StrictHostKeyChecking=no %s %s" % ( config['key_pair_file'], create_remote_file_info( from_file, instances ), create_remote_file_info( to_file, instances ) ) )
 
 def list_zones( config ):
-    out = subprocess.check_output( ["euca-describe-availability-zones", "-I", config['access_id'], "-S", config['access_key'] ] )
+    out = exec_command( config, ["euca-describe-availability-zones" ] )
     result =[] 
     for line in out.split( "\n" ):
         words = line.split()
@@ -233,10 +252,10 @@ def get_first_available_zone( config ):
     return ""
 
 def list_volumes( config, volume_id = None ):
-    cmd = ["euca-describe-volumes", "-I", config['access_id'], "-S", config['access_key'] ]
+    cmd = ["euca-describe-volumes" ]
     if volume_id:
         cmd.append( volume_id )
-    out = exec_command( cmd )
+    out = exec_command( config, cmd )
     result = []
     def find_volume_info( volume_id ):
         for volume_info in result:
@@ -269,11 +288,10 @@ def list_volumes( config, volume_id = None ):
         return result
 
 def create_volume( config, size, zone = None, name = None ):
-    cmd = ["euca-create-volume", "-s", size, "-I",  config['access_id'], "-S", config['access_key'] ]
     if not zone:
         zone = get_first_available_zone( config )
-    cmd = ["euca-create-volume", "-z", zone, "-s", size, "-I",  config['access_id'], "-S", config['access_key'] ]
-    out = subprocess.check_output( cmd )
+    cmd = ["euca-create-volume", "-z", zone, "-s", size, ]
+    out = exec_command( config, cmd )
     volume_info = {}
     for line in out.split("\n"):
         words = line.split()
@@ -292,7 +310,7 @@ def create_volume( config, size, zone = None, name = None ):
 def delete_volume( config, volume_id ):
     volume_info = find_volume( config, volume_id )
     if volume_info:
-        out = subprocess.check_output(['euca-delete-volume', volume_info['id'],  "-I",  config['access_id'], "-S", config['access_key'] ] )
+        out = exec_command( config, ['euca-delete-volume', volume_info['id'] ] )
         print out
 def find_volume( config, volume_id ):
     volumes = list_volumes( config )
@@ -312,7 +330,7 @@ def attach_volume( config, instance_id, volume_id, device='/dev/vdc' ):
     elif not volume:
         print "No such volume %s" % volume_id
     else:
-        out = subprocess.check_output(["euca-attach-volume", "-i", instance['instance_id'], "-d", device, volume['id'], "-I", config["access_id"], "-S", config["access_key"] ] )
+        out = exec_command( config, ["euca-attach-volume", "-i", instance['instance_id'], "-d", device, volume['id'] ])
         print out
 
 def detach_volume( config, volume_id, force = False ):
@@ -320,10 +338,10 @@ def detach_volume( config, volume_id, force = False ):
     if not volume:
         print "No such volume %s" % volume_id
     else:
-        cmd = ["euca-detach-volume", volume['id'], "-I", config["access_id"], "-S", config["access_key"] ]
+        cmd = ["euca-detach-volume", volume['id'] ]
         if force:
             cmd.append( '-f' )
-        out = subprocess.check_output( cmd )
+        out = exec_command( config, cmd )
         print out
 
 def printAsJson( o ):
@@ -332,6 +350,10 @@ def printAsJson( o ):
 def main():
     args = docopt.docopt( __doc__, version="1.0" )
     config = load_config()
+    if args['--debug'] or args['-d']:
+        config['debug'] = True
+    else:
+        config['debug'] = False
     if args['image']:
         if args['list']:
             printAsJson(list_images( config, args['--id'], args['--os'] ))
@@ -347,7 +369,7 @@ def main():
         elif args['stop']:
             stop_instance( config, args['<instance_id>'], args['--force'] )
         elif args['types']:
-            list_instance_types( config )
+            printAsJson( list_instance_types( config ) )
     elif args['zone']:
         if args['list']:
             printAsJson( list_zones( config ) )
@@ -367,6 +389,13 @@ def main():
             attach_volume( config, args['<instance_id>'], args['<volume_id>'], args['--device'] or '/dev/vdc' )
         elif args['detach']:
             detach_volume( config, args['<volume_id>'], args["--force"] )
+    elif args['keypair']:
+        if args['create']:
+            printAsJson( create_keypair( config, args['<name>']) )
+        elif args['delete']:
+            delete_keypair( config, args['<name>'])
+        elif args['list']:
+            printAsJson( list_keypairs( config ) )
     elif args['ssh']:
         ssh( config, args['<name>'] )
     elif args['scp']:
@@ -425,6 +454,32 @@ def find_key_pair_file():
                 not name.endswith( "pk.pem" ) ):
             return f
     return ""
+
+def create_keypair( config, name ):
+    key_file = "%s.pem" % name
+    result = []
+    if os.path.exists( key_file ):
+        sys.stdout.write( "the file %s exists, are you sure to overwrite it for keypair store?(Y/Yes):" % key_file )
+        answer = sys.stdin.readline().strip()
+        if answer == "Y" or answer == "Yes":
+            out = exec_command( config, ['euca-create-keypair', name, '-f', "%s.pem" % name ] )
+            result = parse_keypairs( out )
+    return result
+
+def delete_keypair( config, name ):
+    print exec_command( config, ['euca-delete-keypair', name ] )
+
+def list_keypairs( config ):
+    out = exec_command ( config, ['euca-describe-keypairs' ])
+    return parse_keypairs( out )
+
+def parse_keypairs( keypairs_out ):
+    result = []
+    for line in keypairs_out.split( "\n" ):
+        words = line.split()
+        if len( words ) == 3 and words[0] == "KEYPAIR":
+            result.append( {'name': words[1], 'fingerprint': words[2] } )
+    return result
 
 def load_config( ):
     euca_config = load_euca_ini( find_euca_ini() )
