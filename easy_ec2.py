@@ -21,6 +21,7 @@ Usage:
     easy_ec2.py keypair create <name> [--debug|-d]
     easy_ec2.py keypair delete <name> [--debug|-d]
     easy_ec2.py keypair list [--debug|-d]
+    easy_ec2.py ansible playbook <instance_id> <playbook_file>
     easy_ec2.py ssh <name> [--debug|-d]
     easy_ec2.py scp <from_file> <to_file> [--debug|-d]
     easy_ec2.py version 
@@ -128,7 +129,11 @@ def start_instance( config, image_id = 'emi-c1030eab', instance_type = 'm1.large
     return result[0]
 
 def stop_instance( config, instance_id, force = False ):
-    cmd = ['euca-stop-instances', instance_id ]
+    inst = find_instance( config, instance_id )
+    if not inst:
+        print "Fail to find instance %s" % instance_id
+        return
+    cmd = ['euca-stop-instances', inst['instance_id'] ]
     if force:
         cmd.append( '-f' )
     out = exec_command( config, cmd )
@@ -149,8 +154,8 @@ def parse_instance( out ):
                 inst['type'] = words[8]
                 inst['key_pair'] = words[6]
             result.append( inst )
-        elif len(words) >= 4 and words[0] == "TAG" and words[1] == "instance":
-            if not 'tags' in result[-1]:
+        elif result and len(words) >= 4 and words[0] == "TAG" and words[1] == "instance":
+            if result and not 'tags' in result[-1]:
                 result[-1]['tags'] = []
             if len( words ) > 4:
                 tag = '%s=%s' % (words[3], words[4] )
@@ -186,8 +191,11 @@ def find_instance( config, instance_id ):
     return None
 
 def terminate_instance( config, instance_id ):
+    inst = find_instance( config, instance_id )
+    if not inst:
+        print "Fail to find the instance %s" % instance_id
     result = {}
-    out = exec_command(config, ["euca-terminate-instances", instance_id ])
+    out = exec_command(config, ["euca-terminate-instances", inst['instance_id'] ])
     for line in out.split("\n"):
         words = line.split()
         if len( words ) == 4 and words[0] == "INSTANCE":
@@ -396,6 +404,9 @@ def main():
             delete_keypair( config, args['<name>'])
         elif args['list']:
             printAsJson( list_keypairs( config ) )
+    elif args['ansible']:
+        if args['playbook']:
+            ansible_playbook( config, args['<instance_id>'], args['<playbook_file>'] )
     elif args['ssh']:
         ssh( config, args['<name>'] )
     elif args['scp']:
@@ -480,6 +491,26 @@ def parse_keypairs( keypairs_out ):
         if len( words ) == 3 and words[0] == "KEYPAIR":
             result.append( {'name': words[1], 'fingerprint': words[2] } )
     return result
+
+def create_ansible_hosts( config, instance_id ):
+    inst = find_instance( config, instance_id )
+    ansible_hosts_file = ".ansible_hosts"
+    if not inst:
+        print "Fail to find the instance %s" % instance_id
+        return ""
+    else:
+        with open( ansible_hosts_file, "w" ) as fp:
+            fp.write( "[dockers]\n")
+            fp.write( "%s ansible_user=%s ansible_ssh_private_key_file=%s\n" % (inst['public_ip'], "root", config['key_pair_file']) )
+        return ansible_hosts_file
+
+
+def ansible_playbook( config, instance_id, playbook_file ):
+    ansible_hosts_file = create_ansible_hosts( config, instance_id )
+    if ansible_hosts_file:
+        os.environ['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
+        os.environ['ANSIBLE_INVENTORY'] = os.path.abspath(ansible_hosts_file)
+        os.system( "ansible-playbook %s" % playbook_file )
 
 def load_config( ):
     euca_config = load_euca_ini( find_euca_ini() )
