@@ -22,6 +22,7 @@ Usage:
     easy_ec2.py keypair delete <name> [--debug|-d]
     easy_ec2.py keypair list [--debug|-d]
     easy_ec2.py ansible playbook <instance_id> <playbook_file>
+    easy_ec2.py s3 cp <from_file> <to_file> [--debug|-d]
     easy_ec2.py ssh <name> [--debug|-d]
     easy_ec2.py scp <from_file> <to_file> [--debug|-d]
     easy_ec2.py version 
@@ -352,6 +353,34 @@ def detach_volume( config, volume_id, force = False ):
         out = exec_command( config, cmd )
         print out
 
+def s3_copy( config, from_file, to_file ):
+    """
+    copy the file from s3 to instance in cloud
+    or copy the file from instance in cloud to s3
+    """
+    if from_file.startswith( "s3://" ):
+        if to_file.startswith( "s3://"):
+            os.system( "s3cmd cp %s %s" % (from_file, to_file) )
+        elif to_file.find( ':' ) != -1:
+            # extract the host
+            host = to_file[0:to_file.find( ':') ]
+            inst = find_instance( config, host )
+            if inst:
+                os.system( "ssh -i %s root@%s s3cmd get %s %s" % ( config['key_pair_file'], inst['public_ip'], from_file, to_file[to_file.find( ':' ) + 1:] ) )
+            else:
+                print "no host %s is found" % host
+        else: # copy the s3 file to local
+            os.system( "s3cmd get %s %s" % (from_file, to_file) )
+    elif to_file.startswith( "s3://"):
+        if from_file.find( ':' ) != -1: #try to put remote file to s3
+            host = from_file[0:from_file.find( ':') ]
+            inst = find_instance( config, host )
+            if inst:
+                os.system( "ssh -i %s root@%s s3cmd put %s %s" % ( config['key_pair_file'], inst['public_ip'], from_file[from_file.find( ':' ) + 1: ], to_file ) )
+        else: # try to put local to s3
+            os.system( "s3cmd put %s %s" % ( from_file, to_file) )
+
+
 def printAsJson( o ):
     print json.dumps( o, indent = 4 )
 
@@ -407,6 +436,9 @@ def main():
     elif args['ansible']:
         if args['playbook']:
             ansible_playbook( config, args['<instance_id>'], args['<playbook_file>'] )
+    elif args['s3']:
+        if args['cp']:
+            s3_copy( config, args['<from_file>'], args['<to_file>'] )
     elif args['ssh']:
         ssh( config, args['<name>'] )
     elif args['scp']:
