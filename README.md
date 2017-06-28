@@ -312,3 +312,19 @@ This tool integrates with the ansible, so if want to manage the virtual machine 
 ```shell
 $ easy_ec2.py ansible playbook test-1 software-install.yml
 ```
+
+#### copy from/to s3
+
+s3cmd is integrated into this tool. If s3cmd is installed and the related .s3cfg is configured in the virtual machine, this tool can copy from/to s3 file.
+
+Download from s3 to host test-1:
+
+```shell
+$ easy_ec2.py s3 cp s3://some/file test-1:/root
+```
+
+upload file from host test-1 to s3:
+
+```shell
+$ easy_ec2.py s3 cp test-1:/root/test_file.gz s3://some/directory
+```
