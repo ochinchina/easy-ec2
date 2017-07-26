@@ -72,6 +72,7 @@ class EasyEC2:
         return "Not implement"
     def remove_subnet( self, subnet_name ):
         return "Not implement"
+        
     def s3_share( self, s3_bucket_file ):
         """
         share the s3 file to public in the cloud
@@ -516,6 +517,26 @@ class EucaEasyEC2( EasyEC2 ):
     def add_sec_group_egress_rule( self, group_name, protocol, port_range ):
         cmd = ['euca-authorize', group_name, '--egress', '-P', protocol, '-p', port_range ]
         return self._exec_command( cmd )
+=======
+            print(self._exec_command( cmd ))
+        else:
+            print("fail to find instance by %s" % instance_id)
+
+    def list_sec_group( self ):
+        cmd = ['euca-describe-group']
+        print(self._exec_command( cmd ))
+
+    def create_sec_group( self, name, desc = "no description" ):
+        cmd = ['euca-create-group', name, '-d', desc ]
+        print(self._exec_command( cmd ))
+
+    def add_sec_group_ingress_rule( self, group_name, protocol, port_range ):
+        cmd = ['euca-authorize', group_name, '-P', protocol, '-p', port_range ]
+        print(self._exec_command( cmd ))
+
+    def add_sec_group_egress_rule( self, group_name, protocol, port_range ):
+        cmd = ['euca-authorize', group_name, '--egress', '-P', protocol, '-p', port_range ]
+        return self._exec_command( cmd )
 
     def attach_sec_group( self, group_name, instance_id ):
         inst = self.find_instance( instance_id )
@@ -908,6 +929,38 @@ class EasyEC2ConfigLoader:
     def _find_key_pair( self, key_pair_file ):
         if key_pair_file:
             return os.path.basename( key_pair_file )[:-4]
+=======
+def load_euca_ini( eucaIniFile ):
+    config = ConfigParser.ConfigParser()
+    config.read( [eucaIniFile])
+    return config
+
+def get_from_euca_config( euca_config, key ):
+    for section in euca_config.sections():
+        for item in euca_config.items( section ):
+            if item[0] == key:
+                return item[1]
+    return ""
+
+def find_file_with_suffix_in_directory( dirName, suffix ):
+    result = []
+    if os.path.isdir( dirName ):
+        files = os.listdir( dirName )
+        for f in files:
+            if os.path.isfile( dirName + '/' + f ) and f.endswith( suffix ):
+                result.append( dirName + '/' + f )
+    return result
+
+def find_euca_ini():
+    if os.path.isfile( '/etc/euca2ools/euca2ools.ini' ):
+        return '/etc/euca2ools/euca2ools.ini'
+    files = find_file_with_suffix_in_directory( '/etc/euca2ools/conf.d', ".ini")
+    if not files :
+        files = find_file_with_suffix_in_directory( os.path.expanduser('~/.euca' ), ".ini")
+    if files:
+        return files[0]
+    else:
+>>>>>>> first version
         return ""
     def _set_debug_flag( self, args, config ):
         if config:
@@ -1058,6 +1111,159 @@ def createEasyEC2( args ):
         if config:
             return cloud['creator']( config )            
     return EasyEC2()
+
+class FunctionDispatcher:
+    def __init__( self, easy_ec2 ):
+        self.easy_ec2 = easy_ec2
+        self.methods = [['ansible', 'playbook', '<instance_id>', '<playbook_file>', easy_ec2.ansible_playbook ],
+                        ['image', "list", "--id", "--os", easy_ec2.list_images ],
+                        ["instance", "list", "--name", easy_ec2.list_instances],
+                        ["instance", "start", "<image_id>", "<name>", "--type", "--zone", easy_ec2.start_instance ], 
+                        ["instance", "terminate", "<instance_id>",  easy_ec2.terminate_instance ],
+                        ["instance", "stop", '<instance_id>', '--force', easy_ec2.stop_instance ],
+                        ['instance', 'types', easy_ec2.list_instance_types ],
+                        ['ip', 'list', easy_ec2.elastic_ip_list ],
+                        ['ip', 'alloc', easy_ec2.create_elastic_ip ],
+                        ['ip', 'delete', '<ip_addr>', easy_ec2.elastic_ip_delete ],
+                        ['ip', 'bind', '<instance_id>', 'elastic_ip', easy_ec2.elastic_ip_delete ],
+                        ['keypair', 'delete', '<name>', easy_ec2.delete_keypair ],
+                        ['keypair', 'list', easy_ec2.list_keypairs ],
+                        ['network', 'list', easy_ec2.list_networks ],
+                        ['network', 'create', '<network_name>', easy_ec2.create_network],
+                        ['sec-group', 'list', easy_ec2.list_sec_group],
+                        ['sec-group', 'create', '<group-name>', '--description', easy_ec2.create_sec_group],
+                        ['sec-group', 'ingress', '<group-name>', '<protocol>', '<port_range>', easy_ec2.add_sec_group_ingress_rule],
+                        ['sec-group', 'egress', '<group-name>', '<protocol>', '<port_range>', easy_ec2.add_sec_group_egress_rule],
+                        ['sec-group', 'attach', '<group-name>', '<instance_id>', easy_ec2.attach_sec_group],
+                        ['ssh', '<name>', easy_ec2.ssh ],
+                        ['subnet', 'add', '<network_name>', '<subnet_name>', '<subnet_cidr>', easy_ec2.add_subnet ],
+                        ['subnet', 'list', '--name', easy_ec2.list_subnet ],
+                        ['subnet', 'remove', '<subnet_name>', easy_ec2.remove_subnet ],
+                        ['s3', 'cp', '<from_file>', '<to_file>', easy_ec2.s3_copy ],
+                        ['s3', 'share', '<s3_bucket_file>', easy_ec2.s3_share ],
+                        ['s3', 'ls', '<bucket>', easy_ec2.s3_share ],
+                        ['tags', 'create', '<resource_id>', '<tag>', easy_ec2.create_tags ],
+                        ['tags', 'delete', '<resource_id>', '<tag>', easy_ec2.delete_tags ],
+                        ['volume', 'list', '--id', easy_ec2.list_volumes ],
+                        ['volume', 'create', '<size>', '--zone', '--name', easy_ec2.create_volume ],
+                        ['volume', 'delete', '<volume_id>', easy_ec2.delete_volume ],
+                        ['volume', 'attach', '<instance_id>', '<volume_id>', '--device', easy_ec2.attach_volume ],
+                        ['volume', 'detach', '<volume_id>', '--force', easy_ec2.detach_volume ],
+                        ['zone', 'list', easy_ec2.list_zones ],
+                    ]
+                            
+    def dispatch( self, args ):
+        for method in self.methods:
+            i = 0
+            n = len( method ) - 1
+            params = []
+            while i < n:
+                if method[i].startswith( '--') or method[i].startswith( '<' ):
+                    params.append( args[method[i] ] )
+                elif not args[method[i]]:
+                    break
+                i += 1
+            if i == n:
+                printAsJson( method[-1](*params) )
+                break
+def main():
+    args = docopt.docopt( __doc__, version="1.0" )    
+    #easy_ec2 = createEasyEC2( args )
+    openstack_config = {'key_pair':'taf-test', 
+            'key_pair_file':'taf-test.pem', 
+            'dns-servers':['10.135.72.108', '87.254.221.110'],
+            'public-network':'datacentre',
+            'default-instance-type': "m1.medium",
+            'debug': args['-d'] }
+    easy_ec2 = OpenStackEasyEC2( openstack_config )
+    dispatcher = FunctionDispatcher( easy_ec2 )
+    dispatcher.dispatch( args )
+def exec_command( args ):
+    if args['image']:
+        if args['list']:                               
+            printAsJson( easy_ec2.list_images( args['--id'], args['--os'] ))
+    elif args['instance']:
+        if args['start']:
+            inst_type = args['--type'] or "m1.large"
+            zone = args['--zone'] or easy_ec2.get_first_available_zone()
+            printAsJson( easy_ec2.start_instance( args['<image_id>'], inst_type, args['<name>'], zone = zone ) )
+        elif args['list']:
+            printAsJson( easy_ec2.list_instances( args['--name'] ))
+        elif args['terminate']:
+            printAsJson( easy_ec2.terminate_instance(  args['<instance_id>']))
+        elif args['stop']:
+            easy_ec2.stop_instance( args['<instance_id>'], args['--force'] )
+        elif args['types']:
+            printAsJson( easy_ec2.list_instance_types() )
+    elif args['zone']:
+        if args['list']:
+            printAsJson( easy_ec2.list_zones( ) )
+    elif args['tags']:
+        if args['create']:
+            easy_ec2.create_tags( args['<resource_id>'], args['<tag>'] )
+        elif args['delete']:
+            easy_ec2.delete_tags( args['<resource_id>'], args['<tag>'] )
+    elif args['volume']:
+        if args['list']:
+            printAsJson( easy_ec2.list_volumes( args["--id"] ) )
+        elif args['create']:
+            easy_ec2.create_volume( args['<size>'], zone = args['--zone'], name=args['--name'] )
+        elif args['delete']:
+            easy_ec2.delete_volume( args['<volume_id>'])
+        elif args['attach']:
+            printAsJson( easy_ec2.attach_volume( args['<instance_id>'], args['<volume_id>'], args['--device'] or '/dev/vdc' ) )
+        elif args['detach']:
+            printAsJson( easy_ec2.detach_volume( args['<volume_id>'], args["--force"] ) )
+    elif args['keypair']:
+        if args['create']:
+            printAsJson( easy_ec2.create_keypair( args['<name>']) )
+        elif args['delete']:
+            easy_ec2.delete_keypair( args['<name>'])
+        elif args['list']:
+            printAsJson( easy_ec2.list_keypairs() )
+    elif args['ansible']:
+        if args['playbook']:
+            easy_ec2.ansible_playbook( args['<instance_id>'], args['<playbook_file>'] )
+    elif args['s3']:
+        if args['cp']:
+            easy_ec2.s3_copy( args['<from_file>'], args['<to_file>'] )
+        elif args['share']:
+            easy_ec2.s3_share( args['<s3_bucket_file>'])
+        elif args['ls']:
+            easy_ec2.s3_ls( bucket=args['<bucket>'])
+    elif args['ip']:
+        if args['list']:
+            printAsJson( easy_ec2.elastic_ip_list() )
+        elif args['alloc']:
+            printAsJson( easy_ec2.create_elastic_ip() )
+        elif args['delete']:
+            easy_ec2.elastic_ip_delete( args['<ip_addr>'] )
+        elif args['bind']:
+            easy_ec2.elastic_ip_bind( args['<instance_id>'], args['<elastic_ip>'])
+    elif args['sec-group']:
+        if args['list']:
+            easy_ec2.list_sec_group( )
+        elif args['create']:
+            easy_ec2.create_sec_group( args['<group-name>'], desc = args['--description'] )
+        elif args['ingress']:
+           easy_ec2.add_sec_group_ingress_rule( args['<group-name>'], args['<protocol>'], args['<port_range>'] )
+        elif args['egress']:
+            easy_ec2.add_sec_group_egress_rule( args['<group-name>'], args['<protocol>'], args['<port_range>'] )
+        elif args['attach']:
+            easy_ec2.attach_sec_group( args['<group-name>'], args['<instance_id>'] )
+    elif args['ssh']:
+        easy_ec2.ssh( args['<name>'] )
+    elif args['scp']:
+        easy_ec2.scp( args['<from_file>'], args['<to_file>'] )
+    elif args['router']:
+        if args['list']:
+            printAsJson( easy_ec2.list_routers() )
+    elif args['network']:
+        if args['list']:
+            printAsJson( easy_ec2.list_networks() )
+    elif args['version']:
+        print(easy_ec2.version())    
+>>>>>>> first version
 
 class FunctionDispatcher:
     def __init__( self, easy_ec2 ):
