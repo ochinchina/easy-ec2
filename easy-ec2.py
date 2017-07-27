@@ -929,38 +929,6 @@ class EasyEC2ConfigLoader:
     def _find_key_pair( self, key_pair_file ):
         if key_pair_file:
             return os.path.basename( key_pair_file )[:-4]
-=======
-def load_euca_ini( eucaIniFile ):
-    config = ConfigParser.ConfigParser()
-    config.read( [eucaIniFile])
-    return config
-
-def get_from_euca_config( euca_config, key ):
-    for section in euca_config.sections():
-        for item in euca_config.items( section ):
-            if item[0] == key:
-                return item[1]
-    return ""
-
-def find_file_with_suffix_in_directory( dirName, suffix ):
-    result = []
-    if os.path.isdir( dirName ):
-        files = os.listdir( dirName )
-        for f in files:
-            if os.path.isfile( dirName + '/' + f ) and f.endswith( suffix ):
-                result.append( dirName + '/' + f )
-    return result
-
-def find_euca_ini():
-    if os.path.isfile( '/etc/euca2ools/euca2ools.ini' ):
-        return '/etc/euca2ools/euca2ools.ini'
-    files = find_file_with_suffix_in_directory( '/etc/euca2ools/conf.d', ".ini")
-    if not files :
-        files = find_file_with_suffix_in_directory( os.path.expanduser('~/.euca' ), ".ini")
-    if files:
-        return files[0]
-    else:
->>>>>>> first version
         return ""
     def _set_debug_flag( self, args, config ):
         if config:
@@ -1033,6 +1001,70 @@ class OpenStackConfigLoader( EasyEC2ConfigLoader ):
             self.config_dir = os.path.expanduser('~/.openstack' )
         
     def load_config( self ):
+=======
+        return ""
+    def _set_debug_flag( self, args, config ):
+        if config:
+            if '--debug' in args and args['--debug']:
+                config['debug'] = True
+            elif '-d' in args and args['-d']:
+                config['debug'] = True
+            else:
+                config['debug'] = False
+
+class EucaConfigLoader( EasyEC2ConfigLoader ):
+    def __init__( self ):
+        self.config_dir = os.path.expanduser('~/.euca' )
+        
+    def load_config( self, args ):
+        euca_config = self._load_euca_ini( self._find_euca_ini() )
+        key_pair_file = self._find_key_pair_file()
+        config = {}
+        if key_pair_file and euca_config:
+            config['access_id'] = self._get_from_euca_config( euca_config, 'key-id' )
+            config['access_key'] = self._get_from_euca_config( euca_config, 'secret-key' )
+            config['key_pair'] = self._find_key_pair( key_pair_file )
+            config['key_pair_file'] = key_pair_file
+        return config
+            
+    def _load_euca_ini( self, eucaIniFile ):
+        config = ConfigParser.ConfigParser()
+        config.read( [eucaIniFile])
+        return config
+    
+    def _get_from_euca_config( self, euca_config, key ):
+        for section in euca_config.sections():
+            for item in euca_config.items( section ):
+                if item[0] == key:
+                    return item[1]
+        return ""
+    
+    
+    def _find_euca_ini( self ):
+        files = self._find_file_with_suffix_in_directory( self.config_dir, ".ini")
+        if files:
+            return files[0]
+        else:
+            return ""
+    
+    
+    def _find_key_pair_file( self ):
+        files = self._find_file_with_suffix_in_directory( self.config_dir, ".pem")
+        for f in files:
+            name = os.path.basename( f )
+            if (name.endswith( ".pem" ) and 
+                    not name.startswith( "euca2-" ) and 
+                    not name.endswith( "cert.pem") and
+                    not name.endswith( "pk.pem" ) ):
+                return f
+        return ""
+    
+class OpenStackConfigLoader( EasyEC2ConfigLoader ):
+    def __init__( self ):
+        self.config_dir = os.path.expanduser('~/.openstack' )
+        
+    def load_config( self, args ):
+>>>>>>> euca & openstack config loader
         '''
         load the openstack configuration from openstack.ini file
         '''
@@ -1166,104 +1198,20 @@ class FunctionDispatcher:
             if i == n:
                 printAsJson( method[-1](*params) )
                 break
+
 def main():
     args = docopt.docopt( __doc__, version="1.0" )    
-    #easy_ec2 = createEasyEC2( args )
+    """easy_ec2 = createEasyEC2( args )
     openstack_config = {'key_pair':'taf-test', 
             'key_pair_file':'taf-test.pem', 
-            'dns-servers':['10.135.72.108', '87.254.221.110'],
-            'public-network':'datacentre',
+            'dns_servers':['10.135.72.108', '87.254.221.110'],
+            'public_network':'datacentre',
             'default-instance-type': "m1.medium",
             'debug': args['-d'] }
-    easy_ec2 = OpenStackEasyEC2( openstack_config )
+    easy_ec2 = OpenStackEasyEC2( openstack_config )"""
+    easy_ec2 = createEasyEC2( args )
     dispatcher = FunctionDispatcher( easy_ec2 )
     dispatcher.dispatch( args )
-def exec_command( args ):
-    if args['image']:
-        if args['list']:                               
-            printAsJson( easy_ec2.list_images( args['--id'], args['--os'] ))
-    elif args['instance']:
-        if args['start']:
-            inst_type = args['--type'] or "m1.large"
-            zone = args['--zone'] or easy_ec2.get_first_available_zone()
-            printAsJson( easy_ec2.start_instance( args['<image_id>'], inst_type, args['<name>'], zone = zone ) )
-        elif args['list']:
-            printAsJson( easy_ec2.list_instances( args['--name'] ))
-        elif args['terminate']:
-            printAsJson( easy_ec2.terminate_instance(  args['<instance_id>']))
-        elif args['stop']:
-            easy_ec2.stop_instance( args['<instance_id>'], args['--force'] )
-        elif args['types']:
-            printAsJson( easy_ec2.list_instance_types() )
-    elif args['zone']:
-        if args['list']:
-            printAsJson( easy_ec2.list_zones( ) )
-    elif args['tags']:
-        if args['create']:
-            easy_ec2.create_tags( args['<resource_id>'], args['<tag>'] )
-        elif args['delete']:
-            easy_ec2.delete_tags( args['<resource_id>'], args['<tag>'] )
-    elif args['volume']:
-        if args['list']:
-            printAsJson( easy_ec2.list_volumes( args["--id"] ) )
-        elif args['create']:
-            easy_ec2.create_volume( args['<size>'], zone = args['--zone'], name=args['--name'] )
-        elif args['delete']:
-            easy_ec2.delete_volume( args['<volume_id>'])
-        elif args['attach']:
-            printAsJson( easy_ec2.attach_volume( args['<instance_id>'], args['<volume_id>'], args['--device'] or '/dev/vdc' ) )
-        elif args['detach']:
-            printAsJson( easy_ec2.detach_volume( args['<volume_id>'], args["--force"] ) )
-    elif args['keypair']:
-        if args['create']:
-            printAsJson( easy_ec2.create_keypair( args['<name>']) )
-        elif args['delete']:
-            easy_ec2.delete_keypair( args['<name>'])
-        elif args['list']:
-            printAsJson( easy_ec2.list_keypairs() )
-    elif args['ansible']:
-        if args['playbook']:
-            easy_ec2.ansible_playbook( args['<instance_id>'], args['<playbook_file>'] )
-    elif args['s3']:
-        if args['cp']:
-            easy_ec2.s3_copy( args['<from_file>'], args['<to_file>'] )
-        elif args['share']:
-            easy_ec2.s3_share( args['<s3_bucket_file>'])
-        elif args['ls']:
-            easy_ec2.s3_ls( bucket=args['<bucket>'])
-    elif args['ip']:
-        if args['list']:
-            printAsJson( easy_ec2.elastic_ip_list() )
-        elif args['alloc']:
-            printAsJson( easy_ec2.create_elastic_ip() )
-        elif args['delete']:
-            easy_ec2.elastic_ip_delete( args['<ip_addr>'] )
-        elif args['bind']:
-            easy_ec2.elastic_ip_bind( args['<instance_id>'], args['<elastic_ip>'])
-    elif args['sec-group']:
-        if args['list']:
-            easy_ec2.list_sec_group( )
-        elif args['create']:
-            easy_ec2.create_sec_group( args['<group-name>'], desc = args['--description'] )
-        elif args['ingress']:
-           easy_ec2.add_sec_group_ingress_rule( args['<group-name>'], args['<protocol>'], args['<port_range>'] )
-        elif args['egress']:
-            easy_ec2.add_sec_group_egress_rule( args['<group-name>'], args['<protocol>'], args['<port_range>'] )
-        elif args['attach']:
-            easy_ec2.attach_sec_group( args['<group-name>'], args['<instance_id>'] )
-    elif args['ssh']:
-        easy_ec2.ssh( args['<name>'] )
-    elif args['scp']:
-        easy_ec2.scp( args['<from_file>'], args['<to_file>'] )
-    elif args['router']:
-        if args['list']:
-            printAsJson( easy_ec2.list_routers() )
-    elif args['network']:
-        if args['list']:
-            printAsJson( easy_ec2.list_networks() )
-    elif args['version']:
-        print(easy_ec2.version())    
->>>>>>> first version
 
 class FunctionDispatcher:
     def __init__( self, easy_ec2 ):
@@ -1325,6 +1273,8 @@ def main():
     easy_ec2 = createEasyEC2( args )
     dispatcher = FunctionDispatcher( easy_ec2 )
     dispatcher.dispatch( args )
+=======
+>>>>>>> euca & openstack config loader
 
 if __name__ == "__main__":
     main()
