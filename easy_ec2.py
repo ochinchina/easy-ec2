@@ -21,8 +21,18 @@ Usage:
     easy_ec2.py keypair create <name> [--debug|-d]
     easy_ec2.py keypair delete <name> [--debug|-d]
     easy_ec2.py keypair list [--debug|-d]
+    easy_ec2.py ip list [--debug|-d]
+    easy_ec2.py ip alloc [--debug|-d]
+    easy_ec2.py ip bind <instance_id> <elastic_ip> [--debug|-d]
+    easy_ec2.py sec-group list
+    easy_ec2.py sec-group create <group-name>
+    easy_ec2.py sec-group delete <group-name>
+    easy_ec2.py sec-group ingress <group-name> <protocol> <port_range>
+    easy_ec2.py sec-group egree <group-name> <protocol> <port_range>
+    easy_ec2.py sec-group attach <group-name> <instance_id>
     easy_ec2.py ansible playbook <instance_id> <playbook_file>
     easy_ec2.py s3 cp <from_file> <to_file> [--debug|-d]
+    easy_ec2.py s3 share <s3_bucket_file> [--debug|-d]
     easy_ec2.py ssh <name> [--debug|-d]
     easy_ec2.py scp <from_file> <to_file> [--debug|-d]
     easy_ec2.py version 
@@ -44,9 +54,15 @@ def exec_command( config, cmd ):
         cmd.append( config['access_id'] )
         cmd.append( '-S' )
         cmd.append( config['access_key'] )
+        cmd.append( '--show-empty-fields' )
         if config['debug']:
             cmd.append( '--debug' )
-        return subprocess.check_output( cmd )
+        out = subprocess.check_output( cmd )
+        if config['debug']:
+            print "Command Execute result:"
+            print "========================"
+            print out
+        return out
     except:
         return ""
 def list_images( config, image_id = "", os=""):
@@ -60,12 +76,8 @@ def list_images( config, image_id = "", os=""):
 
     for line in out.split("\n"):
         words = line.split()
-        if len(words) == 10:
-            if os:
-                if  words[2].find( os ) != -1:
-                    result.append( {"image_id": words[1], "os": words[2], "format": words[9]} )
-            else:
-                result.append( {"image_id": words[1], "os": words[2], "format": words[9]} )
+        if len(words) >= 13:
+            result.append( {"image_id": words[1], "os": words[2], "format": words[12]} )
     return result
 
 def find_image_id( config, name ):
@@ -147,13 +159,17 @@ def parse_instance( out ):
         if len( words ) >= 16 and words[0] == 'INSTANCE':
             inst = {"instance_id": words[1],
                     'image_id': words[2],
-                    'public_ip': words[-5],
-                    'private_ip': words[-4],
+                    'public_host': words[3],
+                    'private_host': words[4],
                     'state': words[5],
-                    'type': words[7] }
-            if len( words ) == 17:
-                inst['type'] = words[8]
-                inst['key_pair'] = words[6]
+                    'key_pair': words[6],
+                    'type': words[9],
+                    'create_time': words[10],
+                    'zone': words[11],
+                    'monitoring': words[15],
+                    'public_ip': words[16],
+                    'private_ip': words[17],
+                    'monitoring': words[11]}
             result.append( inst )
         elif result and len(words) >= 4 and words[0] == "TAG" and words[1] == "instance":
             if result and not 'tags' in result[-1]:
@@ -249,7 +265,7 @@ def list_zones( config ):
     result =[] 
     for line in out.split( "\n" ):
         words = line.split()
-        if len( words ) == 3 and words[0] == "AVAILABILITYZONE":
+        if len( words ) >= 3 and words[0] == "AVAILABILITYZONE":
             result.append( {'zone': words[1], 'state': words[2]} )
     return result
 
@@ -275,13 +291,13 @@ def list_volumes( config, volume_id = None ):
         return volume_info
     for line in out.split( "\n"):
         words = line.split()
-        if len( words ) == 7 and words[0] == "VOLUME":
+        if len( words ) == 9 and words[0] == "VOLUME":
             volume_info = find_volume_info( words[1] )
             volume_info['size'] = words[2]
-            volume_info['zone'] = words[3]
-            volume_info['state'] = words[4]
-            volume_info['create-time'] = words[5]
-            volume_info['format'] = words[6]
+            volume_info['zone'] = words[4]
+            volume_info['state'] = words[5]
+            volume_info['create-time'] = words[6]
+            volume_info['format'] = words[7]
         elif len( words ) == 5 and words[0] == "TAG":
             volume_info = find_volume_info( words[2] )
             if not 'tags' in volume_info:
@@ -289,7 +305,7 @@ def list_volumes( config, volume_id = None ):
             volume_info['tags'][words[3]] = words[4]
         elif len( words ) == 6 and words[0] == "ATTACHMENT":
             volume_info = find_volume_info( words[1] )
-            volume_info['attach'] = {'instance':words[2], 'device':words[3],'state':words[4],'time':words[5]}
+            volume_info['attach'] = parse_volume( line )
 
     if volume_id and result:
         return result[0]
@@ -340,7 +356,7 @@ def attach_volume( config, instance_id, volume_id, device='/dev/vdc' ):
         print "No such volume %s" % volume_id
     else:
         out = exec_command( config, ["euca-attach-volume", "-i", instance['instance_id'], "-d", device, volume['id'] ])
-        print out
+        return parse_volume( out )
 
 def detach_volume( config, volume_id, force = False ):
     volume = find_volume( config, volume_id )
@@ -351,7 +367,17 @@ def detach_volume( config, volume_id, force = False ):
         if force:
             cmd.append( '-f' )
         out = exec_command( config, cmd )
-        print out
+        return parse_volume( out )
+
+def parse_volume( out ):
+    words = out.split()
+    if len( words ) == 6 and words[0] == 'ATTACHMENT':
+        return {'volume': words[1],
+            'instance-id': words[2],
+            'attach-device': words[3],
+            'state': words[4],
+            'attach-time': words[5] }
+    return {}
 
 def s3_copy( config, from_file, to_file ):
     """
@@ -381,6 +407,27 @@ def s3_copy( config, from_file, to_file ):
             os.system( "s3cmd put %s %s" % ( from_file, to_file) )
 
 
+def s3_share( config, s3_bucket_file ):
+    """
+    share the s3 file to public in the cloud
+    """
+    os.system( "s3cmd -P setacl %s" % s3_bucket_file )
+
+def elastic_ip_list( config ):
+    cmd = ['euca-describe-addresses']
+    print exec_command( config, cmd )
+
+def elastic_ip_bind( config, instance_id, elastic_ip ):
+    inst = find_instance( config, instance_id )
+    if inst:
+        cmd = ['euca-associate-address', '-i', inst['instance_id'], elastic_ip ]
+        print exec_command( config, cmd )
+    else:
+        print "fail to find instance by %s" % instance_id
+
+def list_sec_group( config ):
+    cmd = ['euca-describe-group']
+    print exec_command( config, cmd )
 def printAsJson( o ):
     print json.dumps( o, indent = 4 )
 
@@ -423,9 +470,9 @@ def main():
         elif args['delete']:
             delete_volume( config, args['<volume_id>'])
         elif args['attach']:
-            attach_volume( config, args['<instance_id>'], args['<volume_id>'], args['--device'] or '/dev/vdc' )
+            printAsJson( attach_volume( config, args['<instance_id>'], args['<volume_id>'], args['--device'] or '/dev/vdc' ) )
         elif args['detach']:
-            detach_volume( config, args['<volume_id>'], args["--force"] )
+            printAsJson( detach_volume( config, args['<volume_id>'], args["--force"] ) )
     elif args['keypair']:
         if args['create']:
             printAsJson( create_keypair( config, args['<name>']) )
@@ -439,6 +486,16 @@ def main():
     elif args['s3']:
         if args['cp']:
             s3_copy( config, args['<from_file>'], args['<to_file>'] )
+        elif args['share']:
+            s3_share( config, args['<s3_bucket_file>'])
+    elif args['ip']:
+        if args['list']:
+            elastic_ip_list( config )
+        elif args['bind']:
+            elastic_ip_bind( config, args['<instance_id>'], args['<elastic_ip>'])
+    elif args['sec-group']:
+        if args['list']:
+            list_sec_group( config )
     elif args['ssh']:
         ssh( config, args['<name>'] )
     elif args['scp']:
