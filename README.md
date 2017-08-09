@@ -2,6 +2,8 @@
 
 A lot of useful script in the euca2ools is provided by the Eucalyptus. It is a little bit hard to remember these commands. To relief this pain, this tool written in python is introduced. Often used commands are integrated into this script. You can only run this script to execute the commands in euca2ools. If not clear about the command, you can simply run this tool without any command line arguments and this tool will print the help menu in the console.
 
+This script also supports the openstack client.
+
 Except for wrapping the commands in the euca2ools, this tools also provides:
 
 - ssh integration
@@ -16,15 +18,80 @@ in ubuntu:
 $ sudo apt install euca2ools
 ```
 
+### install python-openstackclient
+
+in ubuntu
+```shell
+$ sudo pip install python-openstackclient
+```
+
 #### .ini file for euca2ools
 
 copy the euca2ools .ini file to ~/.euca
 
+### .ini file for openstack
+
+get your openstack rc file and execute the script like:
+
+```shell
+$ /your/openstack/rc.sh
+```
+
+the above script requires you input a password and please input your password when prompt, and then list all the openstack environment variable and put to the ~/.openstack/openstack.ini file "AUTH" section like:
+
+```shell
+$ echo "[AUTH]" >~/.openstack/openstack.ini
+$ env | grep OS_ >&~/.openstack/openstack.ini
+```
+
+after executing above script, the contents of file looks like:
+
+```text
+[AUTH]
+OS_AUTH_URL=<url-to-openstack-identity>
+OS_REGION_NAME=<your-region>
+OS_PROJECT_NAME=<project-name>
+OS_USER_DOMAIN_NAME=<user-domain-name>
+OS_IDENTITY_API_VERSION=3
+OS_INTERFACE=public
+OS_PASSWORD=<password>
+OS_USERNAME=<username>
+OS_PROJECT_ID=<project-id>
+```
+
+you also need to add a section "DEFAULT" to the file ~/.openstack/openstack.ini with following keys:
+
+- public_network: the public network in your openstack cloud
+- dns_servers: the dns servers for internet access
+- default_instance_type: the default instance type if no instance type is provided when start instance
+
+After adding above parameters into file ~/.openstack/openstack.ini, the contents of ~/.openstack/openstack.ini looks like:
+
+```text
+[AUTH]
+OS_AUTH_URL=<url-to-openstack-identity>
+OS_REGION_NAME=<your-region>
+OS_PROJECT_NAME=<project-name>
+OS_USER_DOMAIN_NAME=<user-domain-name>
+OS_IDENTITY_API_VERSION=3
+OS_INTERFACE=public
+OS_PASSWORD=<password>
+OS_USERNAME=<username>
+OS_PROJECT_ID=<project-id>
+
+[DEFAULT]
+
+public_network=<public-network>
+dns_servers= <dns-servers-seperated-by-comma>
+default_instance_type=m1.medium
+
+```
+
 #### key-pair .pem file
 
-copy the key-pair file to the ~/.euca
+copy the key-pair file to the ~/.euca or ~/.openstack
 
-### run the easy_ec2 commands
+### run the easy-ec2 commands
 
 #### Get help
 
