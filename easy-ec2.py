@@ -25,6 +25,7 @@ Usage:
     easy_ec2.py ip alloc [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip delete <ip_addr> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip bind <instance_id> <elastic_ip> [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py ip unbind <instance_id> <elastic_ip> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py sec-group list [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py sec-group create <group-name> [--description=<description>] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py sec-group delete <group-name> [--config_dir=<config_dir>]
@@ -43,7 +44,7 @@ Usage:
     easy_ec2.py s3 share <s3_bucket_file> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ssh <name> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py scp <from_file> <to_file> [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py version 
+    easy_ec2.py version [--debug|-d]
 
 """
 
@@ -602,6 +603,8 @@ class OpenStackEasyEC2( EasyEC2 ):
                          ['router', 'set'],
                          ['router', 'delete'],
                          ['router', 'remove', 'subnet'],
+                         ['server', 'add', 'floating', 'ip'],
+                         ['server', 'remove', 'floating', 'ip']
                     ]
                     
     def __init__( self, config ):
@@ -658,7 +661,10 @@ class OpenStackEasyEC2( EasyEC2 ):
             print( "Fail to find a private network, please create one")
             return {}
         if not instance_type:
-            instance_type = "m1.medium"
+            if 'default_instance_type' in self.config:
+                instance_type = self.config['default_instance_type']
+            else:
+                instance_type = "m1.medium"
         image = self._find_image( image_id )
         if not zone:
             zone = self.get_first_available_zone()
@@ -676,10 +682,15 @@ class OpenStackEasyEC2( EasyEC2 ):
 
     def list_instances( self, name = "" ):
         instances = self._exec_command(  ['openstack', 'server', 'list'] )
+        if not name:
+            return instances
+
         result=[]
+
         if instances:
             for inst in instances:
-                result.append( self._exec_command( ['openstack', 'server', 'show', inst['Name'] ] ) )
+                if inst['Name'] == name:
+                    result.append( self._exec_command( ['openstack', 'server', 'show', inst['Name'] ] ) )
         return result
     def stop_instance( self, instance_id, force ):
         return self._exec_command(  ['openstack', 'server', 'stop', instance_id ] )
@@ -793,6 +804,9 @@ class OpenStackEasyEC2( EasyEC2 ):
         return self._exec_command( ['openstack', 'floating', 'ip', 'list'])
     def elastic_ip_bind( self, instance_id, ip_address ):
         return self._exec_command( ['openstack', 'server', 'add', 'floating', 'ip', instance_id, ip_address] )
+    def elastic_ip_unbind( self, instance_id, ip_address ):
+        return self._exec_command( ['openstack', 'server', 'remove', 'floating', 'ip', instance_id, ip_address] )
+
     def elastic_ip_delete( self, ip_addr ):
         return self._exec_command( ['openstack', 'floating', 'ip', 'delete', ip_addr ])
     def create_elastic_ip( self ):
@@ -800,7 +814,7 @@ class OpenStackEasyEC2( EasyEC2 ):
     def ssh( self, instance_id ):
         ip_addr = self._get_elatic_ip_of( instance_id )
         if ip_addr:
-            os.system( "ssh -i %s %s@%s" %(self.config['key_pair_file'], 'root', ip_addr ) )
+            os.system( "ssh -i %s -o StrictHostKeyChecking=no %s@%s" %(self.config['key_pair_file'], 'root', ip_addr ) )
         else:
             print("Fail to find the VM by id or name:%s" % instance_id)
             
@@ -905,7 +919,10 @@ class OpenStackEasyEC2( EasyEC2 ):
                     os.system( "ssh -i %s root@%s s3cmd put %s %s" % ( self.config['key_pair_file'], ip_addr, from_file[from_file.find( ':' ) + 1: ], to_file ) )
             else: # try to put local to s3
                 os.system( "s3cmd put %s %s" % ( from_file, to_file) )    
-
+    def version( self ):
+        version_info = subprocess.check_output(['openstack', '--version'], stderr=subprocess.STDOUT )
+        words = version_info.strip().split()
+        return words[1] if len(words) > 1 else words[0]
 def printAsJson( o ):
     if not o:
         return
@@ -1005,21 +1022,17 @@ class OpenStackConfigLoader( EasyEC2ConfigLoader ):
         '''
         
         ini_file = self._find_openstack_ini_file()
+        print "load configuration from file %s" % ini_file
         key_pair_file = self._find_key_pair_file()
         if ini_file and key_pair_file:
             ini_config = self._load_openstack_ini_file( ini_file )
             if ini_config:
-                self._get_and_set_as_os_environ( ini_config, 'AUTH', 'OS_AUTH_URL')
-                self._get_and_set_as_os_environ( ini_config, 'AUTH', 'OS_REGION_NAME')
-                self._get_and_set_as_os_environ( ini_config, 'AUTH', 'OS_PROJECT_NAME')
-                self._get_and_set_as_os_environ( ini_config, 'AUTH', 'OS_USER_DOMAIN_NAME')
-                self._get_and_set_as_os_environ( ini_config, 'AUTH', 'OS_IDENTITY_API_VERSION')
-                self._get_and_set_as_os_environ( ini_config, 'AUTH', 'OS_INTERFACE')
-                self._get_and_set_as_os_environ( ini_config, 'AUTH', 'OS_PASSWORD')
-                self._get_and_set_as_os_environ( ini_config, 'AUTH', 'OS_USERNAME')
-                self._get_and_set_as_os_environ( ini_config, 'AUTH', 'OS_PROJECT_ID')
-                self._get_and_set_as_os_environ( ini_config, 'AUTH', 'OS_TOKEN')
-                self._get_and_set_as_os_environ( ini_config, 'AUTH', 'OS_URL')
+                for item in ini_config.items( 'AUTH'):
+                    key = item[0].upper().strip()
+                    val = item[1].strip()
+                    if val.startswith( '"' ) and val.endswith( '"'):
+                        val = val[1:-1]
+                    os.environ[ key ] = val
                 config = {}
                 if ini_config.has_option( 'DEFAULT', 'public_network'):
                     config['public_network'] = ini_config.get( 'DEFAULT', 'public_network')
@@ -1038,12 +1051,6 @@ class OpenStackConfigLoader( EasyEC2ConfigLoader ):
                 
         return {}
 
-    def _get_and_set_as_os_environ( self, ini_config, section, option, os_env=None ):
-        if not os_env:
-            os_env = option
-        if ini_config.has_option( section, option ):
-            os.environ[os_env] = ini_config.get( section, option )
-            
     def _load_openstack_ini_file( self, fileName ):
         try:
             config = ConfigParser.ConfigParser()
@@ -1092,7 +1099,8 @@ class FunctionDispatcher:
                         ['ip', 'list', easy_ec2.elastic_ip_list ],
                         ['ip', 'alloc', easy_ec2.create_elastic_ip ],
                         ['ip', 'delete', '<ip_addr>', easy_ec2.elastic_ip_delete ],
-                        ['ip', 'bind', '<instance_id>', 'elastic_ip', easy_ec2.elastic_ip_delete ],
+                        ['ip', 'bind', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_bind],
+                        ['ip', 'unbind', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_unbind],
                         ['keypair', 'delete', '<name>', easy_ec2.delete_keypair ],
                         ['keypair', 'list', easy_ec2.list_keypairs ],
                         ['network', 'list', easy_ec2.list_networks ],
@@ -1117,6 +1125,7 @@ class FunctionDispatcher:
                         ['volume', 'attach', '<instance_id>', '<volume_id>', '--device', easy_ec2.attach_volume ],
                         ['volume', 'detach', '<volume_id>', '--force', easy_ec2.detach_volume ],
                         ['zone', 'list', easy_ec2.list_zones ],
+                        ['version', easy_ec2.version]
                     ]
                             
     def dispatch( self, args ):
