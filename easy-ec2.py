@@ -59,6 +59,24 @@ class EasyEC2:
 
     def list_images( self, image_id = "", os="" ):
         return ["Not implement"]
+    def list_instances( self, name = "" ):
+        return "Not implement"
+    def start_instance( self, image_id, name, instance_type, tags = None, zone=None ):
+        return "Not implement"     
+    def stop_instance( self, instance_id, force = False ):
+        return "Not implement"
+    def terminate_instance( self, instance_id ):
+        return "Not implement"
+    def list_instance_types( self ):
+        return "Not implement"
+    def elastic_ip_list( self ):
+        return "Not implement"
+    def create_elastic_ip( self ):
+        return "Not implement"
+    def elastic_ip_delete( self, ip_addr ):
+        return "Not implement"
+    def elastic_ip_bind( self, instance_id, elastic_ip ):
+        return "Not implement"
     def create_tags( self, resource_id, tags ):
         return "Not implement"
     def delete_tags( self, resource_id, tags ):
@@ -73,7 +91,36 @@ class EasyEC2:
         return "Not implement"
     def remove_subnet( self, subnet_name ):
         return "Not implement"
-        
+    def delete_keypair( self, name ):
+        return "Not implement" 
+    def list_keypairs( self ):
+        return "Not implement"
+    def list_sec_group( self ):
+        return "Not implement"
+    def create_sec_group( self, name, desc = "no description" ):
+        return "Not implement"
+    def add_sec_group_ingress_rule( self, group_name, protocol, port_range ):
+        return "Not implement"
+    def add_sec_group_egress_rule( self, group_name, protocol, port_range ):
+        return "Not implement"
+    def attach_sec_group( self, group_name, instance_id ):
+        return "Not implement"
+    def list_volumes( self, volume_id = None ):
+        return "Not implement"
+    def create_volume( self, size, zone = None, name = None ):
+        return "Not implement"
+    def delete_volume( self, volume_id ):
+        return "Not implement"
+    def attach_volume( self, instance_id, volume_id, device='/dev/vdc' ):
+        return "Not implement"
+    def detach_volume( self, volume_id, force = False ):
+        return "Not implement"
+    def list_zones( self ):
+        return "Not implement"
+    def ssh( self, name ):
+        return "Not implement"
+    def s3_copy( self, from_file, to_file ):
+        return "Not implement"
     def s3_share( self, s3_bucket_file ):
         """
         share the s3 file to public in the cloud
@@ -88,6 +135,8 @@ class EasyEC2:
             os.system( "s3cmd ls %s" % bucket )
         else:
             os.system( "s3cmd ls" )
+    def ansible_playbook( self, instance_id, playbook_file ):
+        return "Not implemented"
     def _is_exec_file_exist( self, exec_file ):
         try:
             out = subprocess.check_output( ['which', exec_file ] ).strip()
@@ -604,7 +653,8 @@ class OpenStackEasyEC2( EasyEC2 ):
                          ['router', 'delete'],
                          ['router', 'remove', 'subnet'],
                          ['server', 'add', 'floating', 'ip'],
-                         ['server', 'remove', 'floating', 'ip']
+                         ['server', 'remove', 'floating', 'ip'],
+                         ['keypair', 'delete']
                     ]
                     
     def __init__( self, config ):
@@ -812,6 +862,9 @@ class OpenStackEasyEC2( EasyEC2 ):
     def create_elastic_ip( self ):
         return self._exec_command( ['openstack', 'floating', 'ip', 'create', self.config['public_network'] ] )
     def ssh( self, instance_id ):
+        if 'key_pair_file' not in self.config or len(self.config['key_pair_file']) <= 0:
+            print( "no keypair file found under ~/.openstack directoru")
+            return
         ip_addr = self._get_elatic_ip_of( instance_id )
         if ip_addr:
             os.system( "ssh -i %s -o StrictHostKeyChecking=no %s@%s" %(self.config['key_pair_file'], 'root', ip_addr ) )
@@ -1024,7 +1077,7 @@ class OpenStackConfigLoader( EasyEC2ConfigLoader ):
         ini_file = self._find_openstack_ini_file()
         print "load configuration from file %s" % ini_file
         key_pair_file = self._find_key_pair_file()
-        if ini_file and key_pair_file:
+        if ini_file:
             ini_config = self._load_openstack_ini_file( ini_file )
             if ini_config:
                 for item in ini_config.items( 'AUTH'):
@@ -1045,7 +1098,8 @@ class OpenStackConfigLoader( EasyEC2ConfigLoader ):
                 if ini_config.has_option( 'DEFAULT', 'default_instance_type'):
                     config['default_instance_type'] = ini_config.get( 'DEFAULT', 'default_instance_type' )
                 config['key_pair_file'] = key_pair_file
-                config['key_pair'] = self._find_key_pair( key_pair_file )
+                if key_pair_file:
+                    config['key_pair'] = self._find_key_pair( key_pair_file )
                 self._set_debug_flag( self.args, config )
                 return config
                 
@@ -1162,7 +1216,8 @@ class FunctionDispatcher:
                         ['ip', 'list', easy_ec2.elastic_ip_list ],
                         ['ip', 'alloc', easy_ec2.create_elastic_ip ],
                         ['ip', 'delete', '<ip_addr>', easy_ec2.elastic_ip_delete ],
-                        ['ip', 'bind', '<instance_id>', 'elastic_ip', easy_ec2.elastic_ip_delete ],
+                        ['ip', 'bind', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_bind],
+                        ['keypair', 'create', '<name>', easy_ec2.create_keypair],
                         ['keypair', 'delete', '<name>', easy_ec2.delete_keypair ],
                         ['keypair', 'list', easy_ec2.list_keypairs ],
                         ['network', 'list', easy_ec2.list_networks ],
