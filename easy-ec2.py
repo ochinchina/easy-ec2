@@ -24,8 +24,8 @@ Usage:
     easy_ec2.py ip list [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip alloc [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip delete <ip_addr> [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py ip bind <instance_id> <elastic_ip> [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py ip unbind <instance_id> <elastic_ip> [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py ip attach <instance_id> <elastic_ip> [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py ip detach <instance_id> <elastic_ip> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py sec-group list [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py sec-group create <group-name> [--description=<description>] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py sec-group delete <group-name> [--config_dir=<config_dir>]
@@ -75,7 +75,7 @@ class EasyEC2:
         return "Not implement"
     def elastic_ip_delete( self, ip_addr ):
         return "Not implement"
-    def elastic_ip_bind( self, instance_id, elastic_ip ):
+    def elastic_ip_attach( self, instance_id, elastic_ip ):
         return "Not implement"
     def create_tags( self, resource_id, tags ):
         return "Not implement"
@@ -125,7 +125,15 @@ class EasyEC2:
         """
         share the s3 file to public in the cloud
         """
-        os.system( "s3cmd -P setacl %s" % s3_bucket_file )
+        out = subprocess.check_output( ['s3cmd', 'ls', s3_bucket_file] )
+	lines = out.strip().split("\n")
+	if len(lines) == 1:
+            os.system( "s3cmd -P setacl %s" % s3_bucket_file )
+        else:
+            for line in lines:
+                words = line.split()
+                self.s3_share( words[3] )
+
 
     def s3_ls( self, bucket = None ):
         """
@@ -541,7 +549,7 @@ class EucaEasyEC2( EasyEC2 ):
         cmd = ['euca-describe-addresses']
         return self._exec_command( cmd )
 
-    def elastic_ip_bind( self, instance_id, elastic_ip ):
+    def elastic_ip_attach( self, instance_id, elastic_ip ):
         inst = self.find_instance( instance_id )
         if inst:
             cmd = ['euca-associate-address', '-i', inst['instance_id'], elastic_ip ]
@@ -852,9 +860,9 @@ class OpenStackEasyEC2( EasyEC2 ):
         
     def elastic_ip_list( self ):
         return self._exec_command( ['openstack', 'floating', 'ip', 'list'])
-    def elastic_ip_bind( self, instance_id, ip_address ):
+    def elastic_ip_attach( self, instance_id, ip_address ):
         return self._exec_command( ['openstack', 'server', 'add', 'floating', 'ip', instance_id, ip_address] )
-    def elastic_ip_unbind( self, instance_id, ip_address ):
+    def elastic_ip_detach( self, instance_id, ip_address ):
         return self._exec_command( ['openstack', 'server', 'remove', 'floating', 'ip', instance_id, ip_address] )
 
     def elastic_ip_delete( self, ip_addr ):
@@ -1153,8 +1161,8 @@ class FunctionDispatcher:
                         ['ip', 'list', easy_ec2.elastic_ip_list ],
                         ['ip', 'alloc', easy_ec2.create_elastic_ip ],
                         ['ip', 'delete', '<ip_addr>', easy_ec2.elastic_ip_delete ],
-                        ['ip', 'bind', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_bind],
-                        ['ip', 'unbind', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_unbind],
+                        ['ip', 'attach', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_attach],
+                        ['ip', 'detach', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_detach],
                         ['keypair', 'delete', '<name>', easy_ec2.delete_keypair ],
                         ['keypair', 'list', easy_ec2.list_keypairs ],
                         ['network', 'list', easy_ec2.list_networks ],
@@ -1180,68 +1188,6 @@ class FunctionDispatcher:
                         ['volume', 'detach', '<volume_id>', '--force', easy_ec2.detach_volume ],
                         ['zone', 'list', easy_ec2.list_zones ],
                         ['version', easy_ec2.version]
-                    ]
-                            
-    def dispatch( self, args ):
-        for method in self.methods:
-            i = 0
-            n = len( method ) - 1
-            params = []
-            while i < n:
-                if method[i].startswith( '--') or method[i].startswith( '<' ):
-                    params.append( args[method[i] ] )
-                elif not args[method[i]]:
-                    break
-                i += 1
-            if i == n:
-                printAsJson( method[-1](*params) )
-                break
-
-def main():
-    args = docopt.docopt( __doc__, version="1.0" )
-    easy_ec2 = createEasyEC2( args )
-    dispatcher = FunctionDispatcher( easy_ec2 )
-    dispatcher.dispatch( args )
-
-class FunctionDispatcher:
-    def __init__( self, easy_ec2 ):
-        self.easy_ec2 = easy_ec2
-        self.methods = [['ansible', 'playbook', '<instance_id>', '<playbook_file>', easy_ec2.ansible_playbook ],
-                        ['image', "list", "--id", "--os", easy_ec2.list_images ],
-                        ["instance", "list", "--name", easy_ec2.list_instances],
-                        ["instance", "start", "<image_id>", "<name>", "--type", "--zone", easy_ec2.start_instance ], 
-                        ["instance", "terminate", "<instance_id>",  easy_ec2.terminate_instance ],
-                        ["instance", "stop", '<instance_id>', '--force', easy_ec2.stop_instance ],
-                        ['instance', 'types', easy_ec2.list_instance_types ],
-                        ['ip', 'list', easy_ec2.elastic_ip_list ],
-                        ['ip', 'alloc', easy_ec2.create_elastic_ip ],
-                        ['ip', 'delete', '<ip_addr>', easy_ec2.elastic_ip_delete ],
-                        ['ip', 'bind', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_bind],
-                        ['keypair', 'create', '<name>', easy_ec2.create_keypair],
-                        ['keypair', 'delete', '<name>', easy_ec2.delete_keypair ],
-                        ['keypair', 'list', easy_ec2.list_keypairs ],
-                        ['network', 'list', easy_ec2.list_networks ],
-                        ['network', 'create', '<network_name>', easy_ec2.create_network],
-                        ['sec-group', 'list', easy_ec2.list_sec_group],
-                        ['sec-group', 'create', '<group-name>', '--description', easy_ec2.create_sec_group],
-                        ['sec-group', 'ingress', '<group-name>', '<protocol>', '<port_range>', easy_ec2.add_sec_group_ingress_rule],
-                        ['sec-group', 'egress', '<group-name>', '<protocol>', '<port_range>', easy_ec2.add_sec_group_egress_rule],
-                        ['sec-group', 'attach', '<group-name>', '<instance_id>', easy_ec2.attach_sec_group],
-                        ['ssh', '<name>', easy_ec2.ssh ],
-                        ['subnet', 'add', '<network_name>', '<subnet_name>', '<subnet_cidr>', easy_ec2.add_subnet ],
-                        ['subnet', 'list', '--name', easy_ec2.list_subnet ],
-                        ['subnet', 'remove', '<subnet_name>', easy_ec2.remove_subnet ],
-                        ['s3', 'cp', '<from_file>', '<to_file>', easy_ec2.s3_copy ],
-                        ['s3', 'share', '<s3_bucket_file>', easy_ec2.s3_share ],
-                        ['s3', 'ls', '<bucket>', easy_ec2.s3_ls ],
-                        ['tags', 'create', '<resource_id>', '<tag>', easy_ec2.create_tags ],
-                        ['tags', 'delete', '<resource_id>', '<tag>', easy_ec2.delete_tags ],
-                        ['volume', 'list', '--id', easy_ec2.list_volumes ],
-                        ['volume', 'create', '<size>', '--zone', '--name', easy_ec2.create_volume ],
-                        ['volume', 'delete', '<volume_id>', easy_ec2.delete_volume ],
-                        ['volume', 'attach', '<instance_id>', '<volume_id>', '--device', easy_ec2.attach_volume ],
-                        ['volume', 'detach', '<volume_id>', '--force', easy_ec2.detach_volume ],
-                        ['zone', 'list', easy_ec2.list_zones ],
                     ]
                             
     def dispatch( self, args ):
