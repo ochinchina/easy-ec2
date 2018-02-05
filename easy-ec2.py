@@ -23,6 +23,7 @@ Usage:
     easy_ec2.py keypair list [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip list [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip alloc [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py ip alloc-attach <instance_id> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip delete <ip_addr> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip attach <instance_id> <elastic_ip> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip detach <instance_id> <elastic_ip> [--debug|-d] [--config_dir=<config_dir>]
@@ -72,6 +73,8 @@ class EasyEC2:
     def elastic_ip_list( self ):
         return "Not implement"
     def create_elastic_ip( self ):
+        return "Not implement"
+    def elastic_ip_alloc_attach( self, instance_id ):
         return "Not implement"
     def elastic_ip_delete( self, ip_addr ):
         return "Not implement"
@@ -662,7 +665,8 @@ class OpenStackEasyEC2( EasyEC2 ):
                          ['router', 'remove', 'subnet'],
                          ['server', 'add', 'floating', 'ip'],
                          ['server', 'remove', 'floating', 'ip'],
-                         ['keypair', 'delete']
+                         ['keypair', 'delete'],
+                         ['floating', 'ip', 'delete']
                     ]
                     
     def __init__( self, config ):
@@ -869,6 +873,15 @@ class OpenStackEasyEC2( EasyEC2 ):
         return self._exec_command( ['openstack', 'floating', 'ip', 'delete', ip_addr ])
     def create_elastic_ip( self ):
         return self._exec_command( ['openstack', 'floating', 'ip', 'create', self.config['public_network'] ] )
+    def elastic_ip_alloc_attach( self, name ):
+        print "instance name:%s" % name
+	if not name:
+            print "instance_id is not set"
+        ip_info = self.create_elastic_ip()
+	if ip_info and "floating_ip_address"  in ip_info:
+            return self.elastic_ip_attach( name, ip_info["floating_ip_address"] )
+        else:
+            return "fail to allocate ip address"
     def ssh( self, instance_id ):
         if 'key_pair_file' not in self.config or len(self.config['key_pair_file']) <= 0:
             print( "no keypair file found under ~/.openstack directoru")
@@ -1160,6 +1173,7 @@ class FunctionDispatcher:
                         ['instance', 'types', easy_ec2.list_instance_types ],
                         ['ip', 'list', easy_ec2.elastic_ip_list ],
                         ['ip', 'alloc', easy_ec2.create_elastic_ip ],
+                        ['ip', 'alloc-attach', "<instance_id>", easy_ec2.elastic_ip_alloc_attach],
                         ['ip', 'delete', '<ip_addr>', easy_ec2.elastic_ip_delete ],
                         ['ip', 'attach', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_attach],
                         ['ip', 'detach', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_detach],
