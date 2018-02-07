@@ -17,7 +17,7 @@ Usage:
     easy_ec2.py volume create <size> [--zone=<zone>] [--name=<name>] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py volume delete <volume_id> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py volume attach <instance_id> <volume_id> [--device=<device>] [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py volume detach <volume_id> [--force] [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py volume detach <instance_id> <volume_id> [--force] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py keypair create <name> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py keypair delete <name> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py keypair list [--debug|-d] [--config_dir=<config_dir>]
@@ -117,7 +117,7 @@ class EasyEC2:
         return "Not implement"
     def attach_volume( self, instance_id, volume_id, device='/dev/vdc' ):
         return "Not implement"
-    def detach_volume( self, volume_id, force = False ):
+    def detach_volume( self, instance_id, volume_id, force = False ):
         return "Not implement"
     def list_zones( self ):
         return "Not implement"
@@ -485,7 +485,7 @@ class EucaEasyEC2( EasyEC2 ):
             out = self._exec_command( ["euca-attach-volume", "-i", instance['instance_id'], "-d", device, volume['id'] ])
             return self._parse_volume( out )
 
-    def detach_volume( self, volume_id, force = False ):
+    def detach_volume( self, instance_id, volume_id, force = False ):
         volume = self.find_volume( volume_id )
         if not volume:
             print("No such volume %s" % volume_id)
@@ -659,7 +659,10 @@ class OpenStackEasyEC2( EasyEC2 ):
                          ['floating', 'ip', 'delete'],
                          ['server', 'add', 'security', 'group'],
                          ['server', 'remove', 'security', 'group'],
-                         ['security', 'group', 'delete']
+                         ['security', 'group', 'delete'],
+                         ['server', 'add', 'volume'],
+                         ['server', 'remove', 'volume'],
+                         ['volume', 'delete']
                     ]
                     
     def __init__( self, config ):
@@ -785,8 +788,8 @@ class OpenStackEasyEC2( EasyEC2 ):
         if not device:
             device = '/dev/vdc'
         return self._exec_command( ['openstack', 'server', 'add', 'volume', '--device', device, instance_id, volume_id ] )
-    def detach_volume( self, volume_id, force ):
-        return self.list_volumes( volume_id )
+    def detach_volume( self, instance_id, volume_id, force ):
+        return self._exec_command( ['openstack', 'server', 'remove', 'volume', instance_id, volume_id ] )
         
     def list_networks( self ):
         networks = self._exec_command( ['openstack', 'network', 'list'])
@@ -1204,7 +1207,7 @@ class FunctionDispatcher:
                         ['volume', 'create', '<size>', '--zone', '--name', easy_ec2.create_volume ],
                         ['volume', 'delete', '<volume_id>', easy_ec2.delete_volume ],
                         ['volume', 'attach', '<instance_id>', '<volume_id>', '--device', easy_ec2.attach_volume ],
-                        ['volume', 'detach', '<volume_id>', '--force', easy_ec2.detach_volume ],
+                        ['volume', 'detach', '<instance_id>', '<volume_id>', '--force', easy_ec2.detach_volume ],
                         ['zone', 'list', easy_ec2.list_zones ],
                         ['version', easy_ec2.version]
                     ]
