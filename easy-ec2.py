@@ -665,6 +665,7 @@ class OpenStackEasyEC2( EasyEC2 ):
                          ['router', 'remove', 'subnet'],
                          ['server', 'add', 'floating', 'ip'],
                          ['server', 'remove', 'floating', 'ip'],
+                         ['keypair', 'create'],
                          ['keypair', 'delete'],
                          ['floating', 'ip', 'delete']
                     ]
@@ -930,7 +931,10 @@ class OpenStackEasyEC2( EasyEC2 ):
         return None
         
     def create_keypair(self, name ):
-        return self._exec_command( ['openstack', 'keypair', 'create', '--private-key', "%s.pem" % name, name ])
+        out = self._exec_command( ['openstack', 'keypair', 'create', name ])
+	with open( '%s.pem' % name, 'wb' ) as fp:
+		fp.write( out )
+
     def list_keypairs( self ):
         return self._exec_command( ['openstack', 'keypair', 'list'] )
     def delete_keypair( self, name ):
@@ -1177,6 +1181,7 @@ class FunctionDispatcher:
                         ['ip', 'delete', '<ip_addr>', easy_ec2.elastic_ip_delete ],
                         ['ip', 'attach', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_attach],
                         ['ip', 'detach', '<instance_id>', '<elastic_ip>', easy_ec2.elastic_ip_detach],
+                        ['keypair', 'create', '<name>', easy_ec2.create_keypair],
                         ['keypair', 'delete', '<name>', easy_ec2.delete_keypair ],
                         ['keypair', 'list', easy_ec2.list_keypairs ],
                         ['network', 'list', easy_ec2.list_networks ],
