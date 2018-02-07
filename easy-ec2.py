@@ -28,11 +28,12 @@ Usage:
     easy_ec2.py ip attach <instance_id> <elastic_ip> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip detach <instance_id> <elastic_ip> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py sec-group list [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py sec-group create <group-name> [--description=<description>] [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py sec-group delete <group-name> [--config_dir=<config_dir>]
-    easy_ec2.py sec-group ingress <group-name> <protocol> <port_range> [--config_dir=<config_dir>]
-    easy_ec2.py sec-group egress <group-name> <protocol> <port_range> [--config_dir=<config_dir>]
-    easy_ec2.py sec-group attach <group-name> <instance_id> [--config_dir=<config_dir>]
+    easy_ec2.py sec-group create <group_name> [--description=<description>] [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py sec-group delete <group_name> [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py sec-group ingress <group_name> <protocol> <port_range> [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py sec-group egress <group_name> <protocol> <port_range> [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py sec-group attach <group_name> <instance_id> [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py sec-group detach <group_name> <instance_id> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py network list [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py network create <network_name> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py subnet add <network_name> <subnet_name> <subnet_cidr> [--debug|-d] [--config_dir=<config_dir>]
@@ -586,18 +587,6 @@ class EucaEasyEC2( EasyEC2 ):
         cmd = ['euca-describe-group']
         return self._exec_command( cmd )
 
-    def create_sec_group( self, name, desc = "no description" ):
-        cmd = ['euca-create-group', name, '-d', desc ]
-        return self._exec_command( cmd )
-
-    def add_sec_group_ingress_rule( self, group_name, protocol, port_range ):
-        cmd = ['euca-authorize', group_name, '-P', protocol, '-p', port_range ]
-        return self._exec_command( cmd )
-
-    def add_sec_group_egress_rule( self, group_name, protocol, port_range ):
-        cmd = ['euca-authorize', group_name, '--egress', '-P', protocol, '-p', port_range ]
-        return self._exec_command( cmd )
-
     def attach_sec_group( self, group_name, instance_id ):
         inst = self.find_instance( instance_id )
         if inst:
@@ -667,7 +656,10 @@ class OpenStackEasyEC2( EasyEC2 ):
                          ['server', 'remove', 'floating', 'ip'],
                          ['keypair', 'create'],
                          ['keypair', 'delete'],
-                         ['floating', 'ip', 'delete']
+                         ['floating', 'ip', 'delete'],
+                         ['server', 'add', 'security', 'group'],
+                         ['server', 'remove', 'security', 'group'],
+                         ['security', 'group', 'delete']
                     ]
                     
     def __init__( self, config ):
@@ -961,15 +953,21 @@ class OpenStackEasyEC2( EasyEC2 ):
             cmd.append( desc )
         cmd.append( group_name )
         return self._exec_command( cmd )
+    def delete_sec_group( self, group_name ):
+        cmd = ['openstack', 'security', 'group', 'delete', group_name]
+        return self._exec_command( cmd )
         
     def add_sec_group_ingress_rule( self, group_name, protocol, port_range ):
-        return self._exec_command( ['openstack', 'security', 'group', 'rule', 'create', '--protocol', protocol, '--dst-port', port_range, '--remote-ip', '0.0.0.0/0', '--ingress', group_name] )
+        return self._exec_command( ['openstack', 'security', 'group', 'rule', 'create', '--protocol', protocol, '--dst-port', port_range, '--src-ip', '0.0.0.0/0', '--ingress', group_name] )
         
     def add_sec_group_egress_rule( self, group_name, protocol, port_range ):
-        return self._exec_command( ['openstack', 'security', 'group', 'rule', 'create', '--protocol', protocol, '--dst-port', port_range, '--remote-ip', '0.0.0.0/0', '--egress', group_name] )
+        return self._exec_command( ['openstack', 'security', 'group', 'rule', 'create', '--protocol', protocol, '--dst-port', port_range, '--src-ip', '0.0.0.0/0', '--egress', group_name] )
         
     def attach_sec_group( self, group_name, instance_id ):
         return self._exec_command( ['openstack', 'server', 'add', 'security', 'group', instance_id, group_name ] )  
+
+    def detach_sec_group( self, group_name, instance_id ):
+        return self._exec_command( ['openstack', 'server', 'remove', 'security', 'group', instance_id, group_name ] )
 
     def s3_copy( self, from_file, to_file ):
         """
@@ -1187,10 +1185,12 @@ class FunctionDispatcher:
                         ['network', 'list', easy_ec2.list_networks ],
                         ['network', 'create', '<network_name>', easy_ec2.create_network],
                         ['sec-group', 'list', easy_ec2.list_sec_group],
-                        ['sec-group', 'create', '<group-name>', '--description', easy_ec2.create_sec_group],
-                        ['sec-group', 'ingress', '<group-name>', '<protocol>', '<port_range>', easy_ec2.add_sec_group_ingress_rule],
-                        ['sec-group', 'egress', '<group-name>', '<protocol>', '<port_range>', easy_ec2.add_sec_group_egress_rule],
-                        ['sec-group', 'attach', '<group-name>', '<instance_id>', easy_ec2.attach_sec_group],
+                        ['sec-group', 'create', '<group_name>', '--description', easy_ec2.create_sec_group],
+                        ['sec-group', 'delete', '<group_name>', easy_ec2.delete_sec_group],
+                        ['sec-group', 'ingress', '<group_name>', '<protocol>', '<port_range>', easy_ec2.add_sec_group_ingress_rule],
+                        ['sec-group', 'egress', '<group_name>', '<protocol>', '<port_range>', easy_ec2.add_sec_group_egress_rule],
+                        ['sec-group', 'attach', '<group_name>', '<instance_id>', easy_ec2.attach_sec_group],
+                        ['sec-group', 'detach', '<group_name>', '<instance_id>', easy_ec2.detach_sec_group],
                         ['ssh', '<name>', easy_ec2.ssh ],
                         ['subnet', 'add', '<network_name>', '<subnet_name>', '<subnet_cidr>', easy_ec2.add_subnet ],
                         ['subnet', 'list', '--name', easy_ec2.list_subnet ],
