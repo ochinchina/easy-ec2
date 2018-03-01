@@ -380,12 +380,12 @@ class EucaEasyEC2( EasyEC2 ):
         if len( tmp ) == 1:
             return tmp[0]
         elif len( tmp ) == 2:
-            return "root@%s:%s" % ( _get_public_ip( tmp[0], instances ), tmp[1] )
+            return "root@%s:%s" % ( self._get_public_ip( tmp[0], instances ), tmp[1] )
         return ""
 
     def scp( self, from_file, to_file ):
         instances = self.list_instances()
-        os.system( "scp -i %s -o StrictHostKeyChecking=no %s %s" % ( self.config['key_pair_file'], create_remote_file_info( from_file, instances ), create_remote_file_info( to_file, instances ) ) )
+        os.system( "scp -i %s -o StrictHostKeyChecking=no %s %s" % ( self.config['key_pair_file'], self._create_remote_file_info( from_file, instances ), self._create_remote_file_info( to_file, instances ) ) )
 
     def list_zones( self ):
         out = self._exec_command( ["euca-describe-availability-zones" ] )
@@ -880,14 +880,24 @@ class OpenStackEasyEC2( EasyEC2 ):
             return "fail to allocate ip address"
     def ssh( self, instance_id ):
         if 'key_pair_file' not in self.config or len(self.config['key_pair_file']) <= 0:
-            print( "no keypair file found under ~/.openstack directoru")
+            print( "no keypair file found under ~/.openstack directory")
             return
         ip_addr = self._get_elatic_ip_of( instance_id )
         if ip_addr:
             os.system( "ssh -i %s -o StrictHostKeyChecking=no %s@%s" %(self.config['key_pair_file'], 'root', ip_addr ) )
         else:
             print("Fail to find the VM by id or name:%s" % instance_id)
-            
+
+    def scp( self, from_file, to_file ):
+        os.system( "scp -i %s -o StrictHostKeyChecking=no %s %s" % ( self.config['key_pair_file'], self._create_remote_file_info( from_file), self._create_remote_file_info( to_file ) ) )
+
+    def _create_remote_file_info( self, remoteFile ):
+        tmp = remoteFile.split( ":" )
+        if len( tmp ) == 1:
+            return tmp[0] 
+        elif len( tmp ) == 2:
+            return "root@%s:%s" % ( self._get_elatic_ip_of( tmp[0] ), tmp[1] )
+        return ""
     def ansible_playbook( self, instance_id, playbook_file):
         ansible_hosts_file = self.create_ansible_hosts( instance_id )
         if ansible_hosts_file:
@@ -1195,6 +1205,7 @@ class FunctionDispatcher:
                         ['sec-group', 'attach', '<group_name>', '<instance_id>', easy_ec2.attach_sec_group],
                         ['sec-group', 'detach', '<group_name>', '<instance_id>', easy_ec2.detach_sec_group],
                         ['ssh', '<name>', easy_ec2.ssh ],
+                        ['scp', '<from_file>', '<to_file>', easy_ec2.scp ],
                         ['subnet', 'add', '<network_name>', '<subnet_name>', '<subnet_cidr>', easy_ec2.add_subnet ],
                         ['subnet', 'list', '--name', easy_ec2.list_subnet ],
                         ['subnet', 'remove', '<subnet_name>', easy_ec2.remove_subnet ],
