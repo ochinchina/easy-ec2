@@ -21,7 +21,7 @@ Usage:
     easy_ec2.py keypair create <name> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py keypair delete <name> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py keypair list [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py ip list [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py ip list [--free] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip alloc [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip alloc-attach <instance_id> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py ip delete <ip_addr> [--debug|-d] [--config_dir=<config_dir>]
@@ -71,7 +71,7 @@ class EasyEC2:
         return "Not implement"
     def list_instance_types( self ):
         return "Not implement"
-    def elastic_ip_list( self ):
+    def elastic_ip_list( self, free = False ):
         return "Not implement"
     def create_elastic_ip( self ):
         return "Not implement"
@@ -549,7 +549,7 @@ class EucaEasyEC2( EasyEC2 ):
         else:
             os.system( "s3cmd ls" )
 
-    def elastic_ip_list( self ):
+    def elastic_ip_list( self, free = False ):
         cmd = ['euca-describe-addresses']
         return self._exec_command( cmd )
 
@@ -859,8 +859,10 @@ class OpenStackEasyEC2( EasyEC2 ):
                 print( err )
         return router_info
         
-    def elastic_ip_list( self ):
-        return self._exec_command( ['openstack', 'floating', 'ip', 'list'])
+    def elastic_ip_list( self, free = False ):
+        all_ips = self._exec_command( ['openstack', 'floating', 'ip', 'list'])
+        return [ ip for ip in all_ips if not ip['Port'] ] if free else all_ips
+        
     def elastic_ip_attach( self, instance_id, ip_address ):
         return self._exec_command( ['openstack', 'server', 'add', 'floating', 'ip', instance_id, ip_address] )
     def elastic_ip_detach( self, instance_id, ip_address ):
@@ -874,7 +876,11 @@ class OpenStackEasyEC2( EasyEC2 ):
         print "instance name:%s" % name
 	if not name:
             print "instance_id is not set"
-        ip_info = self.create_elastic_ip()
+        free_ips = self.elastic_ip_list( free = True )
+        if free_ips:
+            ip_info = {'floating_ip_address': free_ips[0]['Floating IP Address']}
+        else:
+            ip_info = self.create_elastic_ip()
 	if ip_info and "floating_ip_address"  in ip_info:
             return self.elastic_ip_attach( name, ip_info["floating_ip_address"] )
         else:
@@ -1187,7 +1193,7 @@ class FunctionDispatcher:
                         ["instance", "terminate", "<instance_id>",  easy_ec2.terminate_instance ],
                         ["instance", "stop", '<instance_id>', '--force', easy_ec2.stop_instance ],
                         ['instance', 'types', easy_ec2.list_instance_types ],
-                        ['ip', 'list', easy_ec2.elastic_ip_list ],
+                        ['ip', 'list', "--free", easy_ec2.elastic_ip_list ],
                         ['ip', 'alloc', easy_ec2.create_elastic_ip ],
                         ['ip', 'alloc-attach', "<instance_id>", easy_ec2.elastic_ip_alloc_attach],
                         ['ip', 'delete', '<ip_addr>', easy_ec2.elastic_ip_delete ],
