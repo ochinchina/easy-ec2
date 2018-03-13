@@ -13,7 +13,7 @@ Usage:
     easy_ec2.py instance terminate <instance_id> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py instance types [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py zone list [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py volume list [--id=<volume_id>] [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py volume list [--id=<volume_id>] [--status=status] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py volume create <size> [--zone=<zone>] [--name=<name>] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py volume delete <volume_id> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py volume attach <instance_id> <volume_id> [--device=<device>] [--debug|-d] [--config_dir=<config_dir>]
@@ -109,7 +109,7 @@ class EasyEC2:
         return "Not implement"
     def attach_sec_group( self, group_name, instance_id ):
         return "Not implement"
-    def list_volumes( self, volume_id = None ):
+    def list_volumes( self, volume_id = None, status = None ):
         return "Not implement"
     def create_volume( self, size, zone = None, name = None ):
         return "Not implement"
@@ -403,7 +403,7 @@ class EucaEasyEC2( EasyEC2 ):
                 return zone_info['zone']
         return ""
 
-    def list_volumes( self, volume_id = None ):
+    def list_volumes( self, volume_id = None, status = None ):
         cmd = ["euca-describe-volumes" ]
         if volume_id:
             cmd.append( volume_id )
@@ -776,10 +776,11 @@ class OpenStackEasyEC2( EasyEC2 ):
             cmd.append( '--availability-zone', zone )
         cmd.append( name )
         self._exec_command( cmd )
-    def list_volumes( self, volume_id ):
+    def list_volumes( self, volume_id, status ):
         if volume_id:
             return self._exec_command( ['openstack', 'volume', 'show', volume_id ] )
-        return self._exec_command( ['openstack', 'volume', 'list'] ) 
+        volumes = self._exec_command( ['openstack', 'volume', 'list'] ) 
+        return volumes if status is None else [ volume for volume in volumes if volume['Status'] == status]
 
     def delete_volume( self, volume_id ):
         return self._exec_command( ['openstack', 'volume', 'delete', volume_id ] )
@@ -1214,7 +1215,7 @@ class FunctionDispatcher:
                         ['s3', 'ls', '<bucket>', easy_ec2.s3_ls ],
                         ['tags', 'create', '<resource_id>', '<tag>', easy_ec2.create_tags ],
                         ['tags', 'delete', '<resource_id>', '<tag>', easy_ec2.delete_tags ],
-                        ['volume', 'list', '--id', easy_ec2.list_volumes ],
+                        ['volume', 'list', '--id', "--status", easy_ec2.list_volumes ],
                         ['volume', 'create', '<size>', '--zone', '--name', easy_ec2.create_volume ],
                         ['volume', 'delete', '<volume_id>', easy_ec2.delete_volume ],
                         ['volume', 'attach', '<instance_id>', '<volume_id>', '--device', easy_ec2.attach_volume ],
