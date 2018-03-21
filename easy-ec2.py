@@ -56,6 +56,7 @@ import subprocess
 import json
 import docopt
 import ConfigParser 
+import tempfile
 
 class EasyEC2:
 
@@ -155,6 +156,20 @@ class EasyEC2:
             return os.path.isfile( out )
         except:
             return False
+
+    def _download_s3file( self, s3_filename ):
+        """
+        download a file from s3 and save it to the temp directory
+
+        Args:
+            s3_filename - the name of s3 file
+        Return:
+            the temp local file name who hold the contents of s3 file
+        """
+        basename = os.path.basename( s3_filename[len("s3://"):] )
+        filename = os.path.join( tempfile.mkdtemp(), basename )
+        os.system( "s3cmd get -f %s %s" % (s3_filename, filename ) )
+        return filename
             
 class EucaEasyEC2( EasyEC2 ):
     def __init__( self, config ):
@@ -639,11 +654,21 @@ class EucaEasyEC2( EasyEC2 ):
 
 
     def ansible_playbook( self, instance_id, playbook_file ):
+        """
+        execute a ansible playbook on the instance. The playbook can be a local file or s3 file
+        """
         ansible_hosts_file = self.create_ansible_hosts( instance_id )
         if ansible_hosts_file:
+            if playbook_file.startswith( "s3://" ):
+                filename = self._download_s3file( playbook_file )
+            else:
+                filename = playbook_file
             os.environ['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
             os.environ['ANSIBLE_INVENTORY'] = os.path.abspath(ansible_hosts_file)
-            os.system( "ansible-playbook %s" % playbook_file )
+            os.system( "ansible-playbook %s" % filename )
+            if playbook_file.startswith( "s3://"):
+                os.remove( filename )
+                os.removedirs( os.path.dirname( filename ) )
 
 class OpenStackEasyEC2( EasyEC2 ):
     NO_JSON_COMMANDS = [ ['server', 'delete'],
@@ -908,10 +933,17 @@ class OpenStackEasyEC2( EasyEC2 ):
     def ansible_playbook( self, instance_id, playbook_file):
         ansible_hosts_file = self.create_ansible_hosts( instance_id )
         if ansible_hosts_file:
+            if playbook_file.startswith( "s3://" ):
+                filename = self._download_s3file( playbook_file )
+            else:
+                filename = playbook_file
             os.environ['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
             os.environ['ANSIBLE_INVENTORY'] = os.path.abspath(ansible_hosts_file)
-            os.system( "ansible-playbook %s" % playbook_file )
-            
+            os.system( "ansible-playbook %s" % filename )
+            if playbook_file.startswith( "s3://"):
+                os.remove( filename )
+                os.removedirs( os.path.dirname( filename ) )
+
     def create_ansible_hosts( self, instance_id ):
         ip_addr = self._get_elatic_ip_of( instance_id )
         ansible_hosts_file = ".ansible_hosts"
