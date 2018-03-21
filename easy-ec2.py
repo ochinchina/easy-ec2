@@ -926,11 +926,26 @@ class OpenStackEasyEC2( EasyEC2 ):
             
     def _get_elatic_ip_of( self, instance_id ):
         inst = self.find_instance( instance_id )
-        if inst:
-            addrs = inst['addresses'].split(",")
-            if len( addrs ) > 1:
-                return addrs[1].strip()
+        if inst and 'addresses' in inst:
+            addrs = inst['addresses']
+            pos = addrs.rfind( '=' ) 
+            if pos > 0:
+                addrs = addrs[pos+1:]
+            addrs = addrs.split(",")
+            if len(addrs) == 1:
+                return addrs[0].strip()
+            for addr in reversed(addrs):
+                addr = addr.strip()
+                if len( addr ) > 0 and self._is_ip_reachable( addr ):
+                    return addr
         return ""
+
+    def _is_ip_reachable( self, ip ):
+        try:
+            subprocess.check_output( ['ping', '-c', '4', ip ] )
+            return True
+        except:
+            return False
         
     def _find_image( self, image_id ):
         images = self.list_images()
