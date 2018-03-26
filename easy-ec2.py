@@ -40,7 +40,7 @@ Usage:
     easy_ec2.py subnet list [--debug|-d] [--name=<subnet_name>] [--config_dir=<config_dir>]
     easy_ec2.py subnet remove <subnet_name> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py router list [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py ansible playbook <instance_id> <playbook_file> [--config_dir=<config_dir>]
+    easy_ec2.py ansible playbook <instance_id> <playbook_file>... [--config_dir=<config_dir>]
     easy_ec2.py s3 ls [<bucket>] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py s3 cp <from_file> <to_file> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py s3 share <s3_bucket_file> [--debug|-d] [--config_dir=<config_dir>]
@@ -652,8 +652,10 @@ class EucaEasyEC2( EasyEC2 ):
                 fp.write( "%s ansible_user=%s ansible_ssh_private_key_file=%s\n" % (inst['public_ip'], "root", self.config['key_pair_file']) )
             return ansible_hosts_file
 
-
     def ansible_playbook( self, instance_id, playbook_file ):
+        for filename in playbook_file: self._ansible_playbook( instance_id, filename )
+
+    def _ansible_playbook( self, instance_id, playbook_file ):
         """
         execute a ansible playbook on the instance. The playbook can be a local file or s3 file
         """
@@ -931,6 +933,9 @@ class OpenStackEasyEC2( EasyEC2 ):
             return "root@%s:%s" % ( self._get_elatic_ip_of( tmp[0] ), tmp[1] )
         return ""
     def ansible_playbook( self, instance_id, playbook_file):
+        for filename in playbook_file: self._ansible_playbook( instance_id, filename )
+
+    def _ansible_playbook( self, instance_id, playbook_file):
         ansible_hosts_file = self.create_ansible_hosts( instance_id )
         if ansible_hosts_file:
             if playbook_file.startswith( "s3://" ):
