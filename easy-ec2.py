@@ -130,14 +130,11 @@ class EasyEC2:
         """
         share the s3 file to public in the cloud
         """
-        out = subprocess.check_output( ['s3cmd', 'ls', s3_bucket_file] )
-	lines = out.strip().split("\n")
-	if len(lines) == 1:
-            os.system( "s3cmd -P setacl %s" % s3_bucket_file )
-        else:
-            for line in lines:
-                words = line.split()
-                self.s3_share( words[3] )
+        out = subprocess.check_output( ['s3cmd', 'ls', "-r", s3_bucket_file] )
+        for line in out.strip().split("\n"):
+            words = line.split()
+            print words[3]
+            os.system( "s3cmd -P setacl %s" % words[3] )
 
 
     def s3_ls( self, bucket = None ):
