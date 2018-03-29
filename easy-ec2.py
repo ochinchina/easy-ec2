@@ -44,7 +44,7 @@ Usage:
     easy_ec2.py s3 ls [<bucket>] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py s3 cp <from_file> <to_file> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py s3 share <s3_bucket_file> [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py ssh <name> [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py ssh <name> [--user=user] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py scp <from_file> <to_file> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py version [--debug|-d]
 
@@ -122,7 +122,10 @@ class EasyEC2:
         return "Not implement"
     def list_zones( self ):
         return "Not implement"
-    def ssh( self, name ):
+    def ssh( self, name, user = "root" ):
+        """
+        login to the vm name with user name
+        """
         return "Not implement"
     def s3_copy( self, from_file, to_file ):
         return "Not implement"
@@ -372,11 +375,12 @@ class EucaEasyEC2( EasyEC2 ):
                                 'disk': words[4] } )
         return result
 
-    def ssh( self, name ):
+    def ssh( self, name, user  = "root"):
         instances = self.list_instances()
+        if user is None or len( user ) <= 0: user = "root"
         for inst in instances:
             if ("name=%s" % name) in inst['tags'] or inst['instance_id'] == name:
-                os.system("ssh -i %s -o StrictHostKeyChecking=no root@%s" % (self.config['key_pair_file'], inst['public_ip'] ) )
+                os.system("ssh -i %s -o StrictHostKeyChecking=no %s@%s" % (user, self.config['key_pair_file'], inst['public_ip'] ) )
 
     def _get_public_ip( self, name, instances ):
         """
@@ -909,13 +913,14 @@ class OpenStackEasyEC2( EasyEC2 ):
             return self.elastic_ip_attach( name, ip_info["floating_ip_address"] )
         else:
             return "fail to allocate ip address"
-    def ssh( self, instance_id ):
+    def ssh( self, instance_id, user = "root" ):
         if 'key_pair_file' not in self.config or len(self.config['key_pair_file']) <= 0:
             print( "no keypair file found under ~/.openstack directory")
             return
         ip_addr = self._get_elatic_ip_of( instance_id )
         if ip_addr:
-            os.system( "ssh -i %s -o StrictHostKeyChecking=no %s@%s" %(self.config['key_pair_file'], 'root', ip_addr ) )
+            if user is None or len( user ) <= 0: user = "root"
+            os.system( "ssh -i %s -o StrictHostKeyChecking=no %s@%s" %(self.config['key_pair_file'], user, ip_addr ) )
         else:
             print("Fail to find the VM by id or name:%s" % instance_id)
 
@@ -1260,7 +1265,7 @@ class FunctionDispatcher:
                         ['sec-group', 'egress', '<group_name>', '<protocol>', '<port_range>', easy_ec2.add_sec_group_egress_rule],
                         ['sec-group', 'attach', '<group_name>', '<instance_id>', easy_ec2.attach_sec_group],
                         ['sec-group', 'detach', '<group_name>', '<instance_id>', easy_ec2.detach_sec_group],
-                        ['ssh', '<name>', easy_ec2.ssh ],
+                        ['ssh', '<name>', "--user", easy_ec2.ssh ],
                         ['scp', '<from_file>', '<to_file>', easy_ec2.scp ],
                         ['subnet', 'add', '<network_name>', '<subnet_name>', '<subnet_cidr>', easy_ec2.add_subnet ],
                         ['subnet', 'list', '--name', easy_ec2.list_subnet ],
