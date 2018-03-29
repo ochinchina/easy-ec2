@@ -40,7 +40,7 @@ Usage:
     easy_ec2.py subnet list [--debug|-d] [--name=<subnet_name>] [--config_dir=<config_dir>]
     easy_ec2.py subnet remove <subnet_name> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py router list [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py ansible playbook <instance_id> <playbook_file>... [--config_dir=<config_dir>]
+    easy_ec2.py ansible playbook <instance_id> <playbook_file>... [--extra-vars=<extra_vars>] [--config_dir=<config_dir>]
     easy_ec2.py s3 ls [<bucket>] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py s3 cp <from_file> <to_file> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py s3 share <s3_bucket_file> [--debug|-d] [--config_dir=<config_dir>]
@@ -148,7 +148,7 @@ class EasyEC2:
             os.system( "s3cmd ls %s" % bucket )
         else:
             os.system( "s3cmd ls" )
-    def ansible_playbook( self, instance_id, playbook_file ):
+    def ansible_playbook( self, instance_id, playbook_file, extra_vars = None ):
         return "Not implemented"
     def _is_exec_file_exist( self, exec_file ):
         try:
@@ -653,10 +653,10 @@ class EucaEasyEC2( EasyEC2 ):
                 fp.write( "%s ansible_user=%s ansible_ssh_private_key_file=%s\n" % (inst['public_ip'], "root", self.config['key_pair_file']) )
             return ansible_hosts_file
 
-    def ansible_playbook( self, instance_id, playbook_file ):
-        for filename in playbook_file: self._ansible_playbook( instance_id, filename )
+    def ansible_playbook( self, instance_id, playbook_file, extra_vars = None ):
+        for filename in playbook_file: self._ansible_playbook( instance_id, filename, extra_vars )
 
-    def _ansible_playbook( self, instance_id, playbook_file ):
+    def _ansible_playbook( self, instance_id, playbook_file, extra_vars = None ):
         """
         execute a ansible playbook on the instance. The playbook can be a local file or s3 file
         """
@@ -668,7 +668,12 @@ class EucaEasyEC2( EasyEC2 ):
                 filename = playbook_file
             os.environ['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
             os.environ['ANSIBLE_INVENTORY'] = os.path.abspath(ansible_hosts_file)
-            os.system( "ansible-playbook %s" % filename )
+            command = ["ansible-playbook", filename ]
+         
+            if extra_vars is not None:
+                command.append( "--extra-vars" )
+                command.append( extra_vars )
+            subprocess.call( command, stdout = sys.stdout, stderr = sys.stderr )
             if playbook_file.startswith( "s3://"):
                 os.remove( filename )
                 os.removedirs( os.path.dirname( filename ) )
@@ -934,10 +939,10 @@ class OpenStackEasyEC2( EasyEC2 ):
         elif len( tmp ) == 2:
             return "root@%s:%s" % ( self._get_elatic_ip_of( tmp[0] ), tmp[1] )
         return ""
-    def ansible_playbook( self, instance_id, playbook_file):
-        for filename in playbook_file: self._ansible_playbook( instance_id, filename )
+    def ansible_playbook( self, instance_id, playbook_file, extra_vars ):
+        for filename in playbook_file: self._ansible_playbook( instance_id, filename, extra_vars )
 
-    def _ansible_playbook( self, instance_id, playbook_file):
+    def _ansible_playbook( self, instance_id, playbook_file, extra_vars ):
         ansible_hosts_file = self.create_ansible_hosts( instance_id )
         if ansible_hosts_file:
             if playbook_file.startswith( "s3://" ):
@@ -946,7 +951,13 @@ class OpenStackEasyEC2( EasyEC2 ):
                 filename = playbook_file
             os.environ['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
             os.environ['ANSIBLE_INVENTORY'] = os.path.abspath(ansible_hosts_file)
-            os.system( "ansible-playbook %s" % filename )
+            command = ["ansible-playbook", filename ]
+
+            if extra_vars is not None:
+                command.append( "--extra-vars" )
+                command.append( extra_vars )
+            subprocess.call( command, stdout = sys.stdout, stderr = sys.stderr )
+
             if playbook_file.startswith( "s3://"):
                 os.remove( filename )
                 os.removedirs( os.path.dirname( filename ) )
@@ -1240,7 +1251,7 @@ def createEasyEC2( args ):
 class FunctionDispatcher:
     def __init__( self, easy_ec2 ):
         self.easy_ec2 = easy_ec2
-        self.methods = [['ansible', 'playbook', '<instance_id>', '<playbook_file>', easy_ec2.ansible_playbook ],
+        self.methods = [['ansible', 'playbook', '<instance_id>', '<playbook_file>', "--extra-vars", easy_ec2.ansible_playbook ],
                         ['image', "list", "--id", "--os", easy_ec2.list_images ],
                         ["instance", "list", "--name", easy_ec2.list_instances],
                         ["instance", "start", "<image_id>", "<name>", "--type", "--zone", easy_ec2.start_instance ], 
