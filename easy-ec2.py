@@ -772,7 +772,7 @@ class OpenStackEasyEC2( EasyEC2 ):
             print("Fail to find image %s" % image_id)
 
     def list_instances( self, name = "" ):
-        instances = self._exec_command(  ['openstack', 'server', 'list'] )
+        instances = self._exec_command(  ['openstack', 'server', 'list', "--limit", "-1", "--long"] )
         if not name:
             return instances
 
