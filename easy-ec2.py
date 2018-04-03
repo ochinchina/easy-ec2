@@ -57,6 +57,9 @@ import json
 import docopt
 import ConfigParser 
 import tempfile
+import urllib2
+from urlparse import urlparse
+import shutil
 
 class EasyEC2:
 
@@ -170,6 +173,30 @@ class EasyEC2:
         filename = os.path.join( tempfile.mkdtemp(), basename )
         os.system( "s3cmd get -f %s %s" % (s3_filename, filename ) )
         return filename
+    def _download_file( self, url ):
+        """
+        download a file from url
+
+        Return:
+             the temp local file name whose contents is get from url
+        """
+        filename = os.path.join( tempfile.mkdtemp(), os.path.basename( urlparse( url ).path ) )
+        f = urllib2.urlopen( url )
+        with open( filename, "wb" ) as fp:
+            shutil.copyfileobj( f, fp )
+        return filename
+    def _remove_dir( self, path ):
+        """
+        remove a directory
+        """
+        result = [ path ]
+        os.path.walk( path, lambda arg, dirname, names: result.extend( [ os.path.join( dirname, name) for name in names ] ), None )
+        result.reverse()
+        for filename in result:
+            if os.path.isfile( filename ):
+                os.remove( filename )
+            elif os.path.isdir( filename ):
+                os.removedirs( filename ) 
             
 class EucaEasyEC2( EasyEC2 ):
     def __init__( self, config ):
@@ -664,6 +691,8 @@ class EucaEasyEC2( EasyEC2 ):
         if ansible_hosts_file:
             if playbook_file.startswith( "s3://" ):
                 filename = self._download_s3file( playbook_file )
+            elif playbook_file.startswith( "http://" ) or playbook_file.startswith( "https://" ):
+                filename = self._download_file( playbook_file )
             else:
                 filename = playbook_file
             os.environ['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
@@ -674,9 +703,8 @@ class EucaEasyEC2( EasyEC2 ):
                 command.append( "--extra-vars" )
                 command.append( extra_vars )
             subprocess.call( command, stdout = sys.stdout, stderr = sys.stderr )
-            if playbook_file.startswith( "s3://"):
-                os.remove( filename )
-                os.removedirs( os.path.dirname( filename ) )
+            if playbook_file.startswith( "s3://") or playbook_file.startswith( "http://") or playbook_file.startswith("https://"):
+                self._remove_dir( os.path.dirname( filename ) )
 
 class OpenStackEasyEC2( EasyEC2 ):
     NO_JSON_COMMANDS = [ ['server', 'delete'],
@@ -947,6 +975,8 @@ class OpenStackEasyEC2( EasyEC2 ):
         if ansible_hosts_file:
             if playbook_file.startswith( "s3://" ):
                 filename = self._download_s3file( playbook_file )
+            elif playbook_file.startswith( "http://" ) or playbook_file.startswith( "https://" ):
+                filename = self._download_file( playbook_file )
             else:
                 filename = playbook_file
             os.environ['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
@@ -958,9 +988,8 @@ class OpenStackEasyEC2( EasyEC2 ):
                 command.append( extra_vars )
             subprocess.call( command, stdout = sys.stdout, stderr = sys.stderr )
 
-            if playbook_file.startswith( "s3://"):
-                os.remove( filename )
-                os.removedirs( os.path.dirname( filename ) )
+            if playbook_file.startswith( "s3://") or playbook_file.startswith( "http://" ) or playbook_file.startswith( "https://" ):
+                self._remove_dir( os.path.dirname( filename ) )
 
     def create_ansible_hosts( self, instance_id ):
         ip_addr = self._get_elatic_ip_of( instance_id )
