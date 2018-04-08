@@ -40,7 +40,7 @@ Usage:
     easy_ec2.py subnet list [--debug|-d] [--name=<subnet_name>] [--config_dir=<config_dir>]
     easy_ec2.py subnet remove <subnet_name> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py router list [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py ansible playbook <instance_id> <playbook_file>... [--extra-vars=<extra_vars>] [--config_dir=<config_dir>]
+    easy_ec2.py ansible-playbook <instance_id> <playbook_file>... [--extra-vars=<extra_vars>] [--config_dir=<config_dir>]
     easy_ec2.py s3 ls [<bucket>] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py s3 cp <from_file> <to_file> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py s3 share <s3_bucket_file> [--debug|-d] [--config_dir=<config_dir>]
@@ -1280,7 +1280,7 @@ def createEasyEC2( args ):
 class FunctionDispatcher:
     def __init__( self, easy_ec2 ):
         self.easy_ec2 = easy_ec2
-        self.methods = [['ansible', 'playbook', '<instance_id>', '<playbook_file>', "--extra-vars", easy_ec2.ansible_playbook ],
+        self.methods = [['ansible-playbook', '<instance_id>', '<playbook_file>', "--extra-vars", easy_ec2.ansible_playbook ],
                         ['image', "list", "--id", "--os", easy_ec2.list_images ],
                         ["instance", "list", "--name", easy_ec2.list_instances],
                         ["instance", "start", "<image_id>", "<name>", "--type", "--zone", easy_ec2.start_instance ], 
