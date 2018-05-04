@@ -713,7 +713,6 @@ class NameIpCache:
             os.makedirs( dir_name )
         self._cache_file = cache_file
         self._name_ip_map = self._load_name_ip()
-        print self._name_ip_map
 
     def add_name_ip( self, name, ip ):
         if name in self._name_ip_map and self._name_ip_map[name] == ip:
