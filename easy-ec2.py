@@ -986,7 +986,6 @@ class OpenStackEasyEC2( EasyEC2 ):
             ip_addr = self._get_elatic_ip_of( instance_id )
         if ip_addr:
             if user is None or len( user ) <= 0: user = "root"
-            print "ssh -i %s -o StrictHostKeyChecking=no %s@%s" %(self.config['key_pair_file'], user, ip_addr )
             status = os.system( "ssh -i %s -o StrictHostKeyChecking=no %s@%s" %(self.config['key_pair_file'], user, ip_addr ) )
             if status == 0:
                 self.name_ip_cache.add_name_ip( instance_id, ip_addr )
