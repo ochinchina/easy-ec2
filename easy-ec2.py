@@ -706,6 +706,41 @@ class EucaEasyEC2( EasyEC2 ):
             if playbook_file.startswith( "s3://") or playbook_file.startswith( "http://") or playbook_file.startswith("https://"):
                 self._remove_dir( os.path.dirname( filename ) )
 
+class NameIpCache:
+    def __init__( self, cache_file = os.path.expanduser( "~/.caches/name-ip.json" ) ):
+        dir_name = os.path.dirname( cache_file )
+        if not os.path.exists( dir_name ):
+            os.makedirs( dir_name )
+        self._cache_file = cache_file
+        self._name_ip_map = self._load_name_ip()
+        print self._name_ip_map
+
+    def add_name_ip( self, name, ip ):
+        if name in self._name_ip_map and self._name_ip_map[name] == ip:
+            return
+        self._name_ip_map[name] = ip
+        self._save_name_ip_map()
+
+    def remove_name( self, name ):
+        if name not in self._name_ip_map: return
+        del self._name_ip_map[name]
+        self._save_name_ip_map()
+
+    def get_ip( self, name ):
+        return self._name_ip_map[name] if name in self._name_ip_map else None
+
+    def _save_name_ip_map( self ):
+        with open( self._cache_file, "wb" ) as fp:
+            fp.write( json.dumps( self._name_ip_map, indent = 4 ) )
+    def _load_name_ip( self ):
+        if not os.path.exists( self._cache_file ):
+            return {}
+        with open( self._cache_file ) as fp:
+            try:
+                return json.load( fp )
+            except:
+                return {}
+    
 class OpenStackEasyEC2( EasyEC2 ):
     NO_JSON_COMMANDS = [ ['server', 'delete'],
                          ['server', 'stop'],
@@ -729,6 +764,7 @@ class OpenStackEasyEC2( EasyEC2 ):
                     
     def __init__( self, config ):
         self.config = config
+        self.name_ip_cache = NameIpCache()
         
     def _exec_command( self, cmd ):
         if not self._is_exec_file_exist( cmd[0] ):
@@ -804,17 +840,9 @@ class OpenStackEasyEC2( EasyEC2 ):
             print("Fail to find image %s" % image_id)
 
     def list_instances( self, name = "" ):
-        instances = self._exec_command(  ['openstack', 'server', 'list', "--limit", "-1", "--long"] )
-        if not name:
-            return instances
-
-        result=[]
-
-        if instances:
-            for inst in instances:
-                if inst['Name'] == name:
-                    result.append( self._exec_command( ['openstack', 'server', 'show', inst['Name'] ] ) )
-        return result
+        if len( name ) > 0:
+            return [ self._exec_command( ['openstack', 'server', 'show', name ] ) ]
+        return self._exec_command(  ['openstack', 'server', 'list', "--limit", "-1", "--long"] )
     def stop_instance( self, instance_id, force ):
         return self._exec_command(  ['openstack', 'server', 'stop', instance_id ] )
         
@@ -954,10 +982,18 @@ class OpenStackEasyEC2( EasyEC2 ):
         if 'key_pair_file' not in self.config or len(self.config['key_pair_file']) <= 0:
             print( "no keypair file found under ~/.openstack directory")
             return
-        ip_addr = self._get_elatic_ip_of( instance_id )
+        ip_addr = self.name_ip_cache.get_ip( instance_id )
+        if ip_addr is None:
+            ip_addr = self._get_elatic_ip_of( instance_id )
         if ip_addr:
             if user is None or len( user ) <= 0: user = "root"
-            os.system( "ssh -i %s -o StrictHostKeyChecking=no %s@%s" %(self.config['key_pair_file'], user, ip_addr ) )
+            print "ssh -i %s -o StrictHostKeyChecking=no %s@%s" %(self.config['key_pair_file'], user, ip_addr )
+            status = os.system( "ssh -i %s -o StrictHostKeyChecking=no %s@%s" %(self.config['key_pair_file'], user, ip_addr ) )
+            if status == 0:
+                self.name_ip_cache.add_name_ip( instance_id, ip_addr )
+            else:
+                self.name_ip_cache.remove_name( instance_id )
+                self.ssh( instance_id, user )
         else:
             print("Fail to find the VM by id or name:%s" % instance_id)
 
@@ -1008,19 +1044,18 @@ class OpenStackEasyEC2( EasyEC2 ):
             return ansible_hosts_file
             
     def _get_elatic_ip_of( self, instance_id ):
-        inst = self.find_instance( instance_id )
-        if inst and 'addresses' in inst:
-            addrs = inst['addresses']
-            pos = addrs.rfind( '=' ) 
-            if pos > 0:
-                addrs = addrs[pos+1:]
-            addrs = addrs.split(",")
-            if len(addrs) == 1:
-                return addrs[0].strip()
-            for addr in reversed(addrs):
-                addr = addr.strip()
-                if len( addr ) > 0 and self._is_ip_reachable( addr ):
-                    return addr
+        instances = self._exec_command(  ['openstack', 'server', 'list'] )
+        for inst in instances:
+            if inst['ID'] == instance_id or inst['Name'] == instance_id and 'Networks' in inst:
+                addrs = inst['Networks']
+                pos = addrs.rfind( '=' )
+                if pos > 0: addrs = addrs[pos+1:]
+                addrs = addrs.split(",")
+                if len(addrs) == 1:
+                    return addrs[0].strip()
+                for addr in addrs:
+                    addr = addr.strip()
+                    if len( addr ) > 0 and self._is_ip_reachable( addr ): return addr
         return ""
 
     def _is_ip_reachable( self, ip ):
