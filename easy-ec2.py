@@ -50,6 +50,7 @@ Usage:
 
 """
 
+import fcntl
 import sys
 import os
 import subprocess
@@ -706,6 +707,35 @@ class EucaEasyEC2( EasyEC2 ):
             if playbook_file.startswith( "s3://") or playbook_file.startswith( "http://") or playbook_file.startswith("https://"):
                 self._remove_dir( os.path.dirname( filename ) )
 
+class FileLocker:
+   def __init__( self, filename ):
+       self.filename = filename
+
+   def try_lock( self ):
+       try:
+           self.fd = open( self.filename, "wb" )
+           fcntl.lockf( self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB )
+           return True
+       except Exception as ex:
+           self.fd.close()
+           return False
+
+   def lock( self ):
+       while True:
+           if self.try_lock(): break
+           time.sleep( 0.1 )
+
+   def unlock( self ):
+       fcntl.flock(self.fd, fcntl.LOCK_UN)
+       self.fd.close()
+
+   def __enter__(self):
+       self.lock()
+       return self
+
+   def __exit__( self, type, value, traceback ):
+       self.unlock()
+
 class NameIpCache:
     def __init__( self, cache_file = os.path.expanduser( "~/.caches/name-ip.json" ) ):
         dir_name = os.path.dirname( cache_file )
@@ -715,15 +745,19 @@ class NameIpCache:
         self._name_ip_map = self._load_name_ip()
 
     def add_name_ip( self, name, ip ):
-        if name in self._name_ip_map and self._name_ip_map[name] == ip:
-            return
-        self._name_ip_map[name] = ip
-        self._save_name_ip_map()
+        with FileLocker( "%s.lock" % self._cache_file ) as locker:
+            self._load_name_ip()
+            if name in self._name_ip_map and self._name_ip_map[name] == ip:
+                return
+            self._name_ip_map[name] = ip
+            self._save_name_ip_map()
 
     def remove_name( self, name ):
-        if name not in self._name_ip_map: return
-        del self._name_ip_map[name]
-        self._save_name_ip_map()
+        with FileLocker( "%s.lock" % self._cache_file ) as locker:
+            self._load_name_ip()
+            if name not in self._name_ip_map: return
+            del self._name_ip_map[name]
+            self._save_name_ip_map()
 
     def get_ip( self, name ):
         return self._name_ip_map[name] if name in self._name_ip_map else None
