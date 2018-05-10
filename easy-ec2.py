@@ -61,6 +61,7 @@ import tempfile
 import urllib2
 from urlparse import urlparse
 import shutil
+import time
 
 class EasyEC2:
 
