@@ -743,7 +743,7 @@ class NameIpCache:
         if not os.path.exists( dir_name ):
             os.makedirs( dir_name )
         self._cache_file = cache_file
-        self._name_ip_map = self._load_name_ip()
+        self._name_ip_map = {}
 
     def add_name_ip( self, name, ip ):
         with FileLocker( "%s.lock" % self._cache_file ) as locker:
@@ -761,19 +761,22 @@ class NameIpCache:
             self._save_name_ip_map()
 
     def get_ip( self, name ):
-        return self._name_ip_map[name] if name in self._name_ip_map else None
+        with FileLocker( "%s.lock" % self._cache_file ) as locker:
+            self._load_name_ip()
+            return self._name_ip_map[name] if name in self._name_ip_map else None
 
     def _save_name_ip_map( self ):
         with open( self._cache_file, "wb" ) as fp:
             fp.write( json.dumps( self._name_ip_map, indent = 4 ) )
     def _load_name_ip( self ):
         if not os.path.exists( self._cache_file ):
-            return {}
+            self._name_ip_map = {}
+            return
         with open( self._cache_file ) as fp:
             try:
-                return json.load( fp )
+                self._name_ip_map = json.load( fp )
             except:
-                return {}
+                self._name_ip_map = {}
     
 class OpenStackEasyEC2( EasyEC2 ):
     NO_JSON_COMMANDS = [ ['server', 'delete'],
