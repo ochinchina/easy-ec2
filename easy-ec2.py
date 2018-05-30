@@ -1287,7 +1287,6 @@ class OpenStackConfigLoader( EasyEC2ConfigLoader ):
         '''
         
         ini_file = self._find_openstack_ini_file()
-        print "load configuration from file %s" % ini_file
         key_pair_file = self._find_key_pair_file()
         if ini_file:
             ini_config = self._load_openstack_ini_file( ini_file )
