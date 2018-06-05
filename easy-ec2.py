@@ -50,6 +50,7 @@ Usage:
 
 """
 
+import atexit
 import fcntl
 import sys
 import os
@@ -1048,11 +1049,15 @@ class OpenStackEasyEC2( EasyEC2 ):
 
     def _ansible_playbook( self, instance_id, playbook_file, extra_vars ):
         ansible_hosts_file = self.create_ansible_hosts( instance_id )
+        ret_code = -1
         if ansible_hosts_file:
+            atexit.register( os.remove, ansible_hosts_file )
             if playbook_file.startswith( "s3://" ):
                 filename = self._download_s3file( playbook_file )
             elif playbook_file.startswith( "http://" ) or playbook_file.startswith( "https://" ):
                 filename = self._download_file( playbook_file )
+            elif playbook_file.startswith( "file://" ):
+                filename = playbook_file[len("file://"):]
             else:
                 filename = playbook_file
             os.environ['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
@@ -1062,18 +1067,22 @@ class OpenStackEasyEC2( EasyEC2 ):
             if extra_vars is not None:
                 command.append( "--extra-vars" )
                 command.append( extra_vars )
-            subprocess.call( command, stdout = sys.stdout, stderr = sys.stderr )
+            
+            ret_code = subprocess.call( command, stdout = sys.stdout, stderr = sys.stderr )
 
             if playbook_file.startswith( "s3://") or playbook_file.startswith( "http://" ) or playbook_file.startswith( "https://" ):
                 self._remove_dir( os.path.dirname( filename ) )
+        #os.remove( ansible_hosts_file )
+        return ret_code
 
     def create_ansible_hosts( self, instance_id ):
         ip_addr = self._get_elatic_ip_of( instance_id )
-        ansible_hosts_file = ".ansible_hosts"
         if not ip_addr:
             print("Fail to find the instance %s" % instance_id)
             return ""
         else:
+            f, ansible_hosts_file = tempfile.mkstemp( prefix="ansible_hosts" )
+            os.close( f )
             with open( ansible_hosts_file, "w" ) as fp:
                 fp.write( "[dockers]\n")
                 fp.write( "%s ansible_user=%s ansible_ssh_private_key_file=%s\n" % (ip_addr, "root", self.config['key_pair_file']) )
