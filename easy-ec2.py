@@ -7,8 +7,10 @@ Usage:
     easy_ec2.py image list [--os=<os>] [--id=<image_id>] [--config_dir=<config_dir>] [--debug|-d]
     easy_ec2.py tags create <resource_id> [--debug|-d] [<tag>...] [--config_dir=<config_dir>]
     easy_ec2.py tags delete <resource_id> [--debug|-d] [<tag>...] [--config_dir=<config_dir>]
-    easy_ec2.py instance start <image_id> <name> [--debug|-d] [--type=<type>] [--zone=<zone>] [--volume=<volume>] [--config_dir=<config_dir>]
+    easy_ec2.py instance create <image_id> <name> [--debug|-d] [--type=<type>] [--zone=<zone>] [--volume=<volume>] [--config_dir=<config_dir>]
+    easy_ec2.py instance start <instance_id> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py instance stop <instance_id> [--debug|-d] [--force] [--config_dir=<config_dir>]
+    easy_ec2.py instance reboot <instance_id> [--wait] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py instance list [--debug|-d] [--name=<name>] [--config_dir=<config_dir>]
     easy_ec2.py instance terminate <instance_id> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py instance types [--debug|-d] [--config_dir=<config_dir>]
@@ -70,9 +72,14 @@ class EasyEC2:
         return ["Not implement"]
     def list_instances( self, name = "" ):
         return "Not implement"
-    def start_instance( self, image_id, name, instance_type, tags = None, zone=None, volume = None ):
+    def create_instance( self, image_id, name, instance_type, tags = None, zone=None, volume = None ):
         return "Not implement"     
+    def start_instance( self, instance_id ):
+        return "Not implement"
     def stop_instance( self, instance_id, force = False ):
+        return "Not implement"
+
+    def reboot_instance( self, instance_id, wait = False ):
         return "Not implement"
     def terminate_instance( self, instance_id ):
         return "Not implement"
@@ -289,7 +296,7 @@ class EucaEasyEC2( EasyEC2 ):
                 result.append( inst )
         return result
 
-    def start_instance( self, image_id, name, instance_type, tags = None, zone=None, volume = None ):
+    def create_instance( self, image_id, name, instance_type, tags = None, zone=None, volume = None ):
         real_image_id = self._find_image_id( image_id )
         if not real_image_id:
             print("Error: fail to find image by %s" % image_id)
@@ -312,6 +319,8 @@ class EucaEasyEC2( EasyEC2 ):
                     return inst
         return result[0]
 
+    def start_instancce( self, instance_id ):
+        return "not implement"
     def stop_instance( self, instance_id, force = False ):
         inst = self.find_instance( instance_id )
         if not inst:
@@ -782,6 +791,8 @@ class NameIpCache:
 class OpenStackEasyEC2( EasyEC2 ):
     NO_JSON_COMMANDS = [ ['server', 'delete'],
                          ['server', 'stop'],
+                         ['server', 'start'],
+                         ['server', 'reboot'],
                          ['subnet', 'delete'],
                          ['router', 'add'],
                          ['router', 'set'],
@@ -849,7 +860,7 @@ class OpenStackEasyEC2( EasyEC2 ):
     def list_instance_types(self):
         return self._exec_command( ['openstack', 'flavor', 'list'])
         
-    def start_instance( self, image_id, name, instance_type, tags = None, zone=None, volume = None ):
+    def create_instance( self, image_id, name, instance_type, tags = None, zone=None, volume = None ):
         private_network = self.get_first_private_network()
         if not private_network:
             print( "Fail to find a private network, please create one")
@@ -881,8 +892,16 @@ class OpenStackEasyEC2( EasyEC2 ):
         if name is not None and len( name ) > 0:
             return [ self._exec_command( ['openstack', 'server', 'show', name ] ) ]
         return self._exec_command(  ['openstack', 'server', 'list', "--limit", "-1", "--long"] )
+
+    def start_instance( self, instance_id ):
+        return self._exec_command(  ['openstack', 'server', 'start', instance_id ] )
     def stop_instance( self, instance_id, force ):
         return self._exec_command(  ['openstack', 'server', 'stop', instance_id ] )
+
+    def reboot_instance( self, instance_id, wait ):
+        command = ['openstack', 'server', 'reboot', instance_id ]
+        if wait: command.append( "--wait" )
+        return self._exec_command(  command )
         
     def terminate_instance( self, instance_id ):
         return self._exec_command( ['openstack', 'server', 'delete', '--wait', instance_id ] )
@@ -1366,9 +1385,11 @@ class FunctionDispatcher:
         self.methods = [['ansible-playbook', '<instance_id>', '<playbook_file>', "--extra-vars", easy_ec2.ansible_playbook ],
                         ['image', "list", "--id", "--os", easy_ec2.list_images ],
                         ["instance", "list", "--name", easy_ec2.list_instances],
-                        ["instance", "start", "<image_id>", "<name>", "--type", "--zone", "--volume", easy_ec2.start_instance ], 
+                        ["instance", "create", "<image_id>", "<name>", "--type", "--zone", "--volume", easy_ec2.create_instance ], 
+                        ["instance", "start", "<instance_id>", easy_ec2.start_instance ],
                         ["instance", "terminate", "<instance_id>",  easy_ec2.terminate_instance ],
                         ["instance", "stop", '<instance_id>', '--force', easy_ec2.stop_instance ],
+                        ['instance', 'reboot', '<instance_id>', '--wait', easy_ec2.reboot_instance ],
                         ['instance', 'types', easy_ec2.list_instance_types ],
                         ['ip', 'list', "--free", easy_ec2.elastic_ip_list ],
                         ['ip', 'alloc', easy_ec2.create_elastic_ip ],
