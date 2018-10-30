@@ -7,7 +7,7 @@ Usage:
     easy_ec2.py image list [--os=<os>] [--id=<image_id>] [--config_dir=<config_dir>] [--debug|-d]
     easy_ec2.py tags create <resource_id> [--debug|-d] [<tag>...] [--config_dir=<config_dir>]
     easy_ec2.py tags delete <resource_id> [--debug|-d] [<tag>...] [--config_dir=<config_dir>]
-    easy_ec2.py instance create <image_id> <name> [--debug|-d] [--type=<type>] [--zone=<zone>] [--volume=<volume>] [--config_dir=<config_dir>]
+    easy_ec2.py instance create <image_id> <name> [--debug|-d] [--type=<type>] [--zone=<zone>] [--volume=<volume>] [--network=<network>] [--config_dir=<config_dir>]
     easy_ec2.py instance start <instance_id> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py instance stop <instance_id> [--debug|-d] [--force] [--config_dir=<config_dir>]
     easy_ec2.py instance reboot <instance_id> [--wait] [--debug|-d] [--config_dir=<config_dir>]
@@ -72,7 +72,7 @@ class EasyEC2:
         return ["Not implement"]
     def list_instances( self, name = "" ):
         return "Not implement"
-    def create_instance( self, image_id, name, instance_type, tags = None, zone=None, volume = None ):
+    def create_instance( self, image_id, name, instance_type, network = None, tags = None, zone=None, volume = None ):
         return "Not implement"     
     def start_instance( self, instance_id ):
         return "Not implement"
@@ -296,7 +296,7 @@ class EucaEasyEC2( EasyEC2 ):
                 result.append( inst )
         return result
 
-    def create_instance( self, image_id, name, instance_type, tags = None, zone=None, volume = None ):
+    def create_instance( self, image_id, name, instance_type, network = None, tags = None, zone=None, volume = None ):
         real_image_id = self._find_image_id( image_id )
         if not real_image_id:
             print("Error: fail to find image by %s" % image_id)
@@ -860,8 +860,13 @@ class OpenStackEasyEC2( EasyEC2 ):
     def list_instance_types(self):
         return self._exec_command( ['openstack', 'flavor', 'list'])
         
-    def create_instance( self, image_id, name, instance_type, tags = None, zone=None, volume = None ):
-        private_network = self.get_first_private_network()
+    def create_instance( self, image_id, name, instance_type, network=None, tags = None, zone=None, volume = None ):
+        if network is None:
+            network = self.config["network"] if "network" in self.config else None
+        if network is None:
+            private_network = [ self.get_first_private_network() ]
+        else:
+            private_network = network.split(",")
         if not private_network:
             print( "Fail to find a private network, please create one")
             return {}
@@ -878,7 +883,8 @@ class OpenStackEasyEC2( EasyEC2 ):
                 '--image', image['ID'], 
                 '--flavor', instance_type, 
                 '--key-name', self.config['key_pair'],
-                '--nic', "net-id=%s"%private_network['name'],
+                '--nic', ",".join( map( lambda item: "net-id=%s" % item, private_network ) ),
+                '--config-drive', 'True',
                 '--availability-zone', zone ]
             if volume is not None:
                 cmd.extend( ["--volume", volume] )
@@ -1336,6 +1342,8 @@ class OpenStackConfigLoader( EasyEC2ConfigLoader ):
                             config['dns_servers'].append( server )
                 if ini_config.has_option( 'DEFAULT', 'default_instance_type'):
                     config['default_instance_type'] = ini_config.get( 'DEFAULT', 'default_instance_type' )
+                if ini_config.has_option( 'DEFAULT', 'network' ):
+                    config['network'] = ini_config.get( 'DEFAULT', 'network' )
                 config['key_pair_file'] = key_pair_file
                 if key_pair_file:
                     config['key_pair'] = self._find_key_pair( key_pair_file )
@@ -1385,7 +1393,7 @@ class FunctionDispatcher:
         self.methods = [['ansible-playbook', '<instance_id>', '<playbook_file>', "--extra-vars", easy_ec2.ansible_playbook ],
                         ['image', "list", "--id", "--os", easy_ec2.list_images ],
                         ["instance", "list", "--name", easy_ec2.list_instances],
-                        ["instance", "create", "<image_id>", "<name>", "--type", "--zone", "--volume", easy_ec2.create_instance ], 
+                        ["instance", "create", "<image_id>", "<name>", "--type", "--zone", "--network", "--volume", easy_ec2.create_instance ], 
                         ["instance", "start", "<instance_id>", easy_ec2.start_instance ],
                         ["instance", "terminate", "<instance_id>",  easy_ec2.terminate_instance ],
                         ["instance", "stop", '<instance_id>', '--force', easy_ec2.stop_instance ],
