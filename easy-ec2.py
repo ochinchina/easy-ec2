@@ -8,6 +8,7 @@ Usage:
     easy_ec2.py tags create <resource_id> [--debug|-d] [<tag>...] [--config_dir=<config_dir>]
     easy_ec2.py tags delete <resource_id> [--debug|-d] [<tag>...] [--config_dir=<config_dir>]
     easy_ec2.py instance create <image_id> <name> [--debug|-d] [--type=<type>] [--zone=<zone>] [--volume=<volume>] [--network=<network>] [--config_dir=<config_dir>]
+    easy_ec2.py instance create-from-volume <volume> <name> [--debug|-d] [--type=<type>] [--zone=<zone>] [--network=<network>] [--config_dir=<config_dir>]
     easy_ec2.py instance start <instance_id> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py instance stop <instance_id> [--debug|-d] [--force] [--config_dir=<config_dir>]
     easy_ec2.py instance reboot <instance_id> [--wait] [--debug|-d] [--config_dir=<config_dir>]
@@ -16,7 +17,7 @@ Usage:
     easy_ec2.py instance types [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py zone list [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py volume list [--id=<volume_id>] [--status=status] [--debug|-d] [--config_dir=<config_dir>]
-    easy_ec2.py volume create <size> [--zone=<zone>] [--name=<name>] [--debug|-d] [--config_dir=<config_dir>]
+    easy_ec2.py volume create <size> [--image=<image>] [--zone=<zone>] [--name=<name>] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py volume delete <volume_id> [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py volume attach <instance_id> <volume_id> [--device=<device>] [--debug|-d] [--config_dir=<config_dir>]
     easy_ec2.py volume detach <instance_id> <volume_id> [--force] [--debug|-d] [--config_dir=<config_dir>]
@@ -74,6 +75,8 @@ class EasyEC2:
         return "Not implement"
     def create_instance( self, image_id, name, instance_type, network = None, tags = None, zone=None, volume = None ):
         return "Not implement"     
+    def create_instance_from_volume( self, volume, name, instance_type, network = None, tags = None, zone=None ):
+        return "Not implement"
     def start_instance( self, instance_id ):
         return "Not implement"
     def stop_instance( self, instance_id, force = False ):
@@ -125,7 +128,7 @@ class EasyEC2:
         return "Not implement"
     def list_volumes( self, volume_id = None, status = None ):
         return "Not implement"
-    def create_volume( self, size, zone = None, name = None ):
+    def create_volume( self, size, image = None, zone = None, name = None ):
         return "Not implement"
     def delete_volume( self, volume_id ):
         return "Not implement"
@@ -494,7 +497,7 @@ class EucaEasyEC2( EasyEC2 ):
         else:
             return result
 
-    def create_volume( self, size, zone = None, name = None ):
+    def create_volume( self, size, image = None, zone = None, name = None ):
         if not zone:
             zone = self.get_first_available_zone( )
         cmd = ["euca-create-volume", "-z", zone, "-s", size, ]
@@ -860,7 +863,7 @@ class OpenStackEasyEC2( EasyEC2 ):
     def list_instance_types(self):
         return self._exec_command( ['openstack', 'flavor', 'list'])
         
-    def create_instance( self, image_id, name, instance_type, network=None, tags = None, zone=None, volume = None ):
+    def _create_instance( self, name, instance_type, image_id = None, network=None, tags = None, zone=None, volume = None ):
         if network is None:
             network = self.config["network"] if "network" in self.config else None
         if network is None:
@@ -875,24 +878,37 @@ class OpenStackEasyEC2( EasyEC2 ):
                 instance_type = self.config['default_instance_type']
             else:
                 instance_type = "m1.medium"
-        image = self._find_image( image_id )
+        if image_id:
+           image = self._find_image( image_id )
         if not zone:
             zone = self.get_first_available_zone()
-        if image:
-            cmd = ['openstack', 'server', 'create', 
-                '--image', image['ID'], 
-                '--flavor', instance_type, 
+
+        cmd = ['openstack', 'server', 'create',
+                '--flavor', instance_type,
                 '--key-name', self.config['key_pair'],
                 '--nic', ",".join( map( lambda item: "net-id=%s" % item, private_network ) ),
                 '--config-drive', 'True',
                 '--availability-zone', zone ]
+        if image_id:
+            image_info = self._find_image( image_id )
+            if image_info: 
+                cmd.extend( ["--image", image_info["ID"] ] )
             if volume is not None:
                 cmd.extend( ["--volume", volume] )
             cmd.append( name )
-
+            return self._exec_command(  cmd )
+        elif volume:
+            cmd.extend( ["--volume", volume] )
+            cmd.append( name )
             return self._exec_command(  cmd )
         else:
             print("Fail to find image %s" % image_id)
+
+    def create_instance( self, image_id, name, instance_type, network=None, tags = None, zone=None, volume = None ):
+        self._create_instance( name, instance_type, image_id = image_id, network = network, tags = tags, zone  = zone, volume = volume )
+
+    def create_instance_from_volume( self, volume, name, instance_type, network=None, tags = None, zone=None):
+        self._create_instance( name, instance_type, network = network, tags = tags, zone  = zone, volume = volume )
 
     def list_instances( self, name = "" ):
         if name is not None and len( name ) > 0:
@@ -926,10 +942,16 @@ class OpenStackEasyEC2( EasyEC2 ):
     def delete_tags( self, resource_id, tag):
         return "Not support"
     
-    def create_volume( self, size, zone, name ):
+    def create_volume( self, size, image = None, zone = None, name = None ):
         cmd =  ['openstack', 'volume', 'create', '--size', size ]
         if zone:
-            cmd.append( '--availability-zone', zone )
+            cmd.append( '--availability-zone' )
+            cmd.append( zone )
+        if image:
+            image_info = self._find_image( image )
+            if image_info:
+                cmd.append( '--image' )
+                cmd.append( image_info["ID"] )
         cmd.append( name )
         self._exec_command( cmd )
     def list_volumes( self, volume_id, status ):
@@ -1394,6 +1416,7 @@ class FunctionDispatcher:
                         ['image', "list", "--id", "--os", easy_ec2.list_images ],
                         ["instance", "list", "--name", easy_ec2.list_instances],
                         ["instance", "create", "<image_id>", "<name>", "--type", "--zone", "--network", "--volume", easy_ec2.create_instance ], 
+                        ["instance", "create-from-volume", "<volume>", "<name>", "--type", "--zone", "--network", easy_ec2.create_instance_from_volume ],
                         ["instance", "start", "<instance_id>", easy_ec2.start_instance ],
                         ["instance", "terminate", "<instance_id>",  easy_ec2.terminate_instance ],
                         ["instance", "stop", '<instance_id>', '--force', easy_ec2.stop_instance ],
@@ -1428,7 +1451,7 @@ class FunctionDispatcher:
                         ['tags', 'create', '<resource_id>', '<tag>', easy_ec2.create_tags ],
                         ['tags', 'delete', '<resource_id>', '<tag>', easy_ec2.delete_tags ],
                         ['volume', 'list', '--id', "--status", easy_ec2.list_volumes ],
-                        ['volume', 'create', '<size>', '--zone', '--name', easy_ec2.create_volume ],
+                        ['volume', 'create', '<size>', '--image', '--zone', '--name', easy_ec2.create_volume ],
                         ['volume', 'delete', '<volume_id>', easy_ec2.delete_volume ],
                         ['volume', 'attach', '<instance_id>', '<volume_id>', '--device', easy_ec2.attach_volume ],
                         ['volume', 'detach', '<instance_id>', '<volume_id>', '--force', easy_ec2.detach_volume ],
