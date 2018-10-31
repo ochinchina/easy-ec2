@@ -867,7 +867,8 @@ class OpenStackEasyEC2( EasyEC2 ):
         if network is None:
             network = self.config["network"] if "network" in self.config else None
         if network is None:
-            private_network = [ self.get_first_private_network() ]
+            private_network = self.get_first_private_network()
+            if private_network: private_network = [ private_network["id"] ]
         else:
             private_network = network.split(",")
         if not private_network:
