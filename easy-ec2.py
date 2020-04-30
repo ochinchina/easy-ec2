@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 """
 ec2 tool for manage the virtual machine in the EE-cloud
@@ -60,12 +60,17 @@ import os
 import subprocess
 import json
 import docopt
-import ConfigParser 
 import tempfile
-import urllib2
-from urlparse import urlparse
 import shutil
 import time
+try:
+    from ConfigParser import ConfigParser
+    from urllib2 import urlopen
+    from urlparse import urlparse
+except:
+    from configparser import ConfigParser
+    from urllib.parse import urlparse
+
 
 class EasyEC2:
 
@@ -152,7 +157,7 @@ class EasyEC2:
         out = subprocess.check_output( ['s3cmd', 'ls', "-r", s3_bucket_file] )
         for line in out.strip().split("\n"):
             words = line.split()
-            print words[3]
+            print( words[3] )
             os.system( "s3cmd -P setacl %s" % words[3] )
 
 
@@ -1052,15 +1057,15 @@ class OpenStackEasyEC2( EasyEC2 ):
     def create_elastic_ip( self ):
         return self._exec_command( ['openstack', 'floating', 'ip', 'create', self.config['public_network'] ] )
     def elastic_ip_alloc_attach( self, name ):
-        print "instance name:%s" % name
-	if not name:
-            print "instance_id is not set"
+        print( "instance name:%s" % name )
+        if name is None or len( name ) <= 0:
+            print( "instance_id is not set" )
         free_ips = self.elastic_ip_list( free = True )
         if free_ips:
             ip_info = {'floating_ip_address': free_ips[0]['Floating IP Address']}
         else:
             ip_info = self.create_elastic_ip()
-	if ip_info and "floating_ip_address"  in ip_info:
+        if ip_info and "floating_ip_address"  in ip_info:
             return self.elastic_ip_attach( name, ip_info["floating_ip_address"] )
         else:
             return "fail to allocate ip address"
@@ -1170,8 +1175,8 @@ class OpenStackEasyEC2( EasyEC2 ):
         
     def create_keypair(self, name ):
         out = self._exec_command( ['openstack', 'keypair', 'create', name ])
-	with open( '%s.pem' % name, 'wb' ) as fp:
-		fp.write( out )
+        with open( '%s.pem' % name, 'wb' ) as fp:
+            fp.write( out )
 
     def list_keypairs( self ):
         return self._exec_command( ['openstack', 'keypair', 'list'] )
@@ -1377,10 +1382,11 @@ class OpenStackConfigLoader( EasyEC2ConfigLoader ):
 
     def _load_openstack_ini_file( self, fileName ):
         try:
-            config = ConfigParser.ConfigParser()
+            config = ConfigParser()
             config.read( [fileName])
             return config
-        except:
+        except Exception as ex:
+            print( ex )
             return {}
                     
     def _find_openstack_ini_file( self ):
