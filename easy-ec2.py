@@ -852,6 +852,10 @@ class OpenStackEasyEC2( EasyEC2 ):
     def _in_debug( self ):
         return 'debug' in self.config and self.config['debug']        
     def list_images( self, image_id = "", os=""):
+        if image_id is not None and len( image_id ) > 0:
+            image_info = self._exec_command( ['openstack', 'image', 'show', image_id ] )
+            return image_info
+
         images = self._exec_command( ['openstack', 'image', 'list', "--limit", "1000"])
         if image_id:
             for image in images:
